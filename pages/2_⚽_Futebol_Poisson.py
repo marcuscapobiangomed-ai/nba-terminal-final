@@ -1,12 +1,14 @@
 """
-Premier League Pro Quant - Modelo de Poisson
-Calcula forca de ataque/defesa e odds justas automaticamente
+Premier League Live - Modelo de Poisson com Dados Automaticos
+Busca dados da web e calcula forcas de ataque/defesa
 """
 
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 from scipy.stats import poisson
+import requests
+from datetime import datetime
 
 # --- CONFIGURACAO VISUAL ---
 st.markdown("""
@@ -20,6 +22,12 @@ st.markdown("""
     .metric-box { text-align: center; }
     .metric-value { font-size: 1.5em; font-weight: bold; color: #4da6ff; }
     .metric-label { font-size: 0.8em; color: #888; }
+    .status-badge {
+        padding: 5px 10px; border-radius: 5px; font-size: 0.8em; font-weight: bold;
+        display: inline-block; margin-bottom: 10px;
+    }
+    .status-ok { background-color: #1a2e1a; color: #00ff00; border: 1px solid #00ff00; }
+    .status-backup { background-color: #332b00; color: #ffcc00; border: 1px solid #ffcc00; }
     .prediction-box {
         background-color: #1a2e1a;
         border-left: 4px solid #00ff00;
@@ -37,77 +45,95 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. DATABASE PREMIER LEAGUE 24/25 ---
-# Dados baseados em resultados reais da temporada (atualize periodicamente)
-# Formato: {time: {'gf_casa': gols feitos em casa, 'gc_casa': gols sofridos em casa,
-#                  'gf_fora': gols feitos fora, 'gc_fora': gols sofridos fora,
-#                  'jogos_casa': n jogos, 'jogos_fora': n jogos}}
-
-DADOS_PL_2425 = {
-    "Liverpool": {"gf_casa": 28, "gc_casa": 5, "gf_fora": 17, "gc_fora": 8, "jogos_casa": 9, "jogos_fora": 8},
-    "Arsenal": {"gf_casa": 18, "gc_casa": 8, "gf_fora": 15, "gc_fora": 6, "jogos_casa": 8, "jogos_fora": 9},
-    "Chelsea": {"gf_casa": 21, "gc_casa": 10, "gf_fora": 17, "gc_fora": 11, "jogos_casa": 9, "jogos_fora": 8},
-    "Nottm Forest": {"gf_casa": 15, "gc_casa": 10, "gf_fora": 10, "gc_fora": 9, "jogos_casa": 8, "jogos_fora": 9},
-    "Newcastle": {"gf_casa": 13, "gc_casa": 7, "gf_fora": 13, "gc_fora": 10, "jogos_casa": 8, "jogos_fora": 9},
-    "Manchester City": {"gf_casa": 18, "gc_casa": 12, "gf_fora": 15, "gc_fora": 11, "jogos_casa": 9, "jogos_fora": 8},
-    "Bournemouth": {"gf_casa": 14, "gc_casa": 10, "gf_fora": 13, "gc_fora": 11, "jogos_casa": 8, "jogos_fora": 9},
-    "Brighton": {"gf_casa": 15, "gc_casa": 12, "gf_fora": 10, "gc_fora": 10, "jogos_casa": 9, "jogos_fora": 8},
-    "Aston Villa": {"gf_casa": 13, "gc_casa": 10, "gf_fora": 11, "gc_fora": 12, "jogos_casa": 9, "jogos_fora": 8},
-    "Fulham": {"gf_casa": 11, "gc_casa": 8, "gf_fora": 11, "gc_fora": 10, "jogos_casa": 8, "jogos_fora": 9},
-    "Brentford": {"gf_casa": 18, "gc_casa": 15, "gf_fora": 8, "gc_fora": 12, "jogos_casa": 9, "jogos_fora": 8},
-    "Tottenham": {"gf_casa": 20, "gc_casa": 8, "gf_fora": 10, "gc_fora": 15, "jogos_casa": 8, "jogos_fora": 9},
-    "Manchester United": {"gf_casa": 10, "gc_casa": 10, "gf_fora": 9, "gc_fora": 10, "jogos_casa": 8, "jogos_fora": 9},
-    "West Ham": {"gf_casa": 13, "gc_casa": 13, "gf_fora": 8, "gc_fora": 14, "jogos_casa": 9, "jogos_fora": 8},
-    "Everton": {"gf_casa": 7, "gc_casa": 9, "gf_fora": 8, "gc_fora": 10, "jogos_casa": 8, "jogos_fora": 9},
-    "Crystal Palace": {"gf_casa": 10, "gc_casa": 10, "gf_fora": 7, "gc_fora": 12, "jogos_casa": 9, "jogos_fora": 8},
-    "Leicester": {"gf_casa": 11, "gc_casa": 17, "gf_fora": 8, "gc_fora": 15, "jogos_casa": 9, "jogos_fora": 8},
-    "Wolves": {"gf_casa": 11, "gc_casa": 16, "gf_fora": 7, "gc_fora": 18, "jogos_casa": 8, "jogos_fora": 9},
-    "Ipswich": {"gf_casa": 9, "gc_casa": 17, "gf_fora": 7, "gc_fora": 17, "jogos_casa": 9, "jogos_fora": 8},
-    "Southampton": {"gf_casa": 7, "gc_casa": 17, "gf_fora": 4, "gc_fora": 21, "jogos_casa": 8, "jogos_fora": 9}
+# --- 1. DADOS DE BACKUP (Caso a API falhe) ---
+# Formato: {time: [jogos, gols_pro, gols_contra]}
+BACKUP_STATS = {
+    "Liverpool": [17, 45, 17],
+    "Arsenal": [17, 33, 14],
+    "Chelsea": [17, 38, 21],
+    "Nottm Forest": [17, 25, 19],
+    "Newcastle": [17, 26, 17],
+    "Manchester City": [17, 33, 23],
+    "Bournemouth": [17, 27, 21],
+    "Brighton": [17, 25, 22],
+    "Aston Villa": [17, 24, 22],
+    "Fulham": [17, 22, 18],
+    "Brentford": [17, 26, 27],
+    "Tottenham": [17, 30, 23],
+    "Manchester United": [17, 19, 20],
+    "West Ham": [17, 21, 27],
+    "Everton": [17, 15, 19],
+    "Crystal Palace": [17, 17, 22],
+    "Leicester": [17, 19, 32],
+    "Wolves": [17, 18, 34],
+    "Ipswich": [17, 16, 34],
+    "Southampton": [17, 11, 38]
 }
 
-# --- 2. MOTOR MATEMATICO ---
-def calcular_forcas_liga():
-    """Calcula forca de ataque e defesa de cada time baseado na media da liga"""
-    # Medias da Liga
-    total_gols_casa = sum(d['gf_casa'] for d in DADOS_PL_2425.values())
-    total_jogos_casa = sum(d['jogos_casa'] for d in DADOS_PL_2425.values())
-    media_gols_casa = total_gols_casa / total_jogos_casa
+# --- 2. FUNCAO DE BUSCA DE DADOS ---
+@st.cache_data(ttl=3600)  # Cache de 1 hora
+def buscar_dados_pl():
+    """Tenta buscar dados da Premier League via API publica"""
+    try:
+        # API Football-Data.org (gratuita com limite)
+        url = "https://api.football-data.org/v4/competitions/PL/standings"
+        headers = {"X-Auth-Token": "demo"}  # Token demo tem limite
 
-    total_gols_fora = sum(d['gf_fora'] for d in DADOS_PL_2425.values())
-    total_jogos_fora = sum(d['jogos_fora'] for d in DADOS_PL_2425.values())
-    media_gols_fora = total_gols_fora / total_jogos_fora
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            standings = data['standings'][0]['table']
+
+            stats = {}
+            for team in standings:
+                nome = team['team']['shortName']
+                stats[nome] = [
+                    team['playedGames'],
+                    team['goalsFor'],
+                    team['goalsAgainst']
+                ]
+
+            return stats, "Online (API)"
+        else:
+            return BACKUP_STATS, "Backup (API indisponivel)"
+
+    except Exception as e:
+        return BACKUP_STATS, "Backup (Erro de conexao)"
+
+# --- 3. MOTOR MATEMATICO ---
+def calcular_forcas(stats):
+    """Calcula forca de ataque e defesa baseado na media da liga"""
+    # Calcula medias da liga
+    total_jogos = sum(s[0] for s in stats.values())
+    total_gols = sum(s[1] for s in stats.values())
+    media_gols = total_gols / total_jogos if total_jogos > 0 else 1.5
 
     forcas = {}
-    for time, dados in DADOS_PL_2425.items():
-        # Media do time
-        media_gf_casa = dados['gf_casa'] / dados['jogos_casa']
-        media_gc_casa = dados['gc_casa'] / dados['jogos_casa']
-        media_gf_fora = dados['gf_fora'] / dados['jogos_fora']
-        media_gc_fora = dados['gc_fora'] / dados['jogos_fora']
+    for time, dados in stats.items():
+        jogos, gf, gc = dados
+        if jogos > 0:
+            # Forca = Performance do time / Media da liga
+            atk = (gf / jogos) / media_gols
+            def_ = (gc / jogos) / media_gols
+            forcas[time] = {'atk': atk, 'def': def_, 'gf': gf, 'gc': gc, 'jogos': jogos}
+        else:
+            forcas[time] = {'atk': 1.0, 'def': 1.0, 'gf': 0, 'gc': 0, 'jogos': 0}
 
-        # Forca = Performance do time / Media da liga
-        forcas[time] = {
-            'atk_casa': media_gf_casa / media_gols_casa,
-            'def_casa': media_gc_casa / media_gols_fora,  # Gols sofridos em casa vs media de gols fora
-            'atk_fora': media_gf_fora / media_gols_fora,
-            'def_fora': media_gc_fora / media_gols_casa   # Gols sofridos fora vs media de gols casa
-        }
+    return forcas, media_gols
 
-    return forcas, media_gols_casa, media_gols_fora
+def prever_jogo(time_casa, time_fora, forcas, media_gols, hfa=1.25):
+    """Calcula xG esperado com Home Field Advantage"""
+    # xG Casa = Forca Ataque Casa * Forca Defesa Fora * Media Liga * HFA
+    xg_casa = forcas[time_casa]['atk'] * forcas[time_fora]['def'] * media_gols * hfa
 
-def prever_jogo(time_casa, time_fora, forcas, media_casa, media_fora):
-    """Calcula xG esperado para cada time"""
-    # xG Casa = Forca Ataque Casa * Forca Defesa Fora (adversario) * Media Liga Casa
-    xg_casa = forcas[time_casa]['atk_casa'] * forcas[time_fora]['def_fora'] * media_casa
-
-    # xG Fora = Forca Ataque Fora * Forca Defesa Casa (adversario) * Media Liga Fora
-    xg_fora = forcas[time_fora]['atk_fora'] * forcas[time_casa]['def_casa'] * media_fora
+    # xG Fora = Forca Ataque Fora * Forca Defesa Casa * Media Liga
+    xg_fora = forcas[time_fora]['atk'] * forcas[time_casa]['def'] * media_gols
 
     return xg_casa, xg_fora
 
 def calcular_probabilidades_poisson(xg_casa, xg_fora, max_gols=10):
-    """Calcula probabilidades 1X2 usando distribuicao de Poisson"""
+    """Calcula probabilidades 1X2 usando Poisson"""
     prob_casa = 0
     prob_empate = 0
     prob_fora = 0
@@ -132,8 +158,15 @@ def calcular_matriz_placares(xg_casa, xg_fora, max_gols=6):
             matriz[i, j] = poisson.pmf(i, xg_casa) * poisson.pmf(j, xg_fora)
     return matriz
 
-# --- 3. BARRA LATERAL ---
+# --- 4. BARRA LATERAL ---
 with st.sidebar:
+    st.header("Status do Sistema")
+
+    if st.button("Forcar Atualizacao", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown("---")
     st.header("Sobre o Modelo")
     st.info("""
     **Distribuicao de Poisson**
@@ -141,35 +174,41 @@ with st.sidebar:
     Calcula a probabilidade de cada placar
     baseado na forca historica dos times.
 
-    **Forca de Ataque:** Gols marcados vs media da liga
-    **Forca de Defesa:** Gols sofridos vs media da liga
+    **HFA (Home Advantage):** +25% para mandante
     """)
-    st.markdown("---")
-    st.caption("Dados: Premier League 24/25")
-    st.caption("Atualize os dados periodicamente")
 
-# --- 4. INTERFACE PRINCIPAL ---
-st.title("Premier League Pro Quant")
-st.caption("Modelo de Poisson com Forca de Ataque/Defesa")
+# --- 5. INTERFACE PRINCIPAL ---
+st.title("Premier League Live")
 
-# Calcular forcas da liga
-forcas, media_casa, media_fora = calcular_forcas_liga()
-lista_times = sorted(list(DADOS_PL_2425.keys()))
+# Buscar dados
+stats, status_dados = buscar_dados_pl()
+forcas, media_gols = calcular_forcas(stats)
+lista_times = sorted(list(stats.keys()))
+
+# Status badge
+if "Online" in status_dados:
+    st.markdown(f'<span class="status-badge status-ok">{status_dados}</span>', unsafe_allow_html=True)
+else:
+    st.markdown(f'<span class="status-badge status-backup">{status_dados}</span>', unsafe_allow_html=True)
+
+st.caption(f"Ultima atualizacao: {datetime.now().strftime('%H:%M:%S')}")
 
 # Selecao de times
 st.markdown("### Selecione a Partida")
 col1, col2 = st.columns(2)
 
 with col1:
-    time_casa = st.selectbox("Mandante (Casa)", lista_times, index=lista_times.index("Liverpool"))
+    idx_casa = lista_times.index("Liverpool") if "Liverpool" in lista_times else 0
+    time_casa = st.selectbox("Mandante (Casa)", lista_times, index=idx_casa)
 with col2:
-    time_fora = st.selectbox("Visitante (Fora)", lista_times, index=lista_times.index("Arsenal"))
+    idx_fora = lista_times.index("Arsenal") if "Arsenal" in lista_times else 1
+    time_fora = st.selectbox("Visitante (Fora)", lista_times, index=idx_fora)
 
 if time_casa == time_fora:
     st.error("Selecione times diferentes.")
 else:
     # Previsao
-    xg_casa, xg_fora = prever_jogo(time_casa, time_fora, forcas, media_casa, media_fora)
+    xg_casa, xg_fora = prever_jogo(time_casa, time_fora, forcas, media_gols)
     prob_casa, prob_empate, prob_fora = calcular_probabilidades_poisson(xg_casa, xg_fora)
 
     # Odds justas
@@ -179,32 +218,22 @@ else:
 
     st.markdown("---")
 
-    # Exibicao xG
-    st.markdown("### Expectativa de Gols (xG)")
-    c1, c2, c3 = st.columns([2, 1, 2])
-
-    with c1:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value">{xg_casa:.2f}</div>
-            <div class="metric-label">{time_casa}</div>
+    # Card do Jogo
+    st.markdown(f"""
+    <div class="game-card">
+        <h3 style="text-align:center; color:white; margin-bottom: 20px;">{time_casa} vs {time_fora}</h3>
+        <div style="display:flex; justify-content:space-around;">
+            <div class="metric-box">
+                <div class="metric-label">xG {time_casa}</div>
+                <div class="metric-value">{xg_casa:.2f}</div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">xG {time_fora}</div>
+                <div class="metric-value">{xg_fora:.2f}</div>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        st.markdown("""
-        <div class="metric-box">
-            <div class="metric-value">vs</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""
-        <div class="metric-box">
-            <div class="metric-value">{xg_fora:.2f}</div>
-            <div class="metric-label">{time_fora}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("---")
+    </div>
+    """, unsafe_allow_html=True)
 
     # Odds Justas
     st.markdown("### Odds Justas (Fair Lines)")
@@ -217,7 +246,7 @@ else:
 
     # Calculadora de Valor
     st.markdown("### Calculadora de Valor (+EV)")
-    st.caption("Compare as odds do mercado com as odds justas do modelo")
+    st.caption("Insira as odds do mercado para encontrar valor")
 
     ev_col1, ev_col2, ev_col3 = st.columns(3)
 
@@ -312,17 +341,17 @@ else:
 
     # Forcas dos times
     with st.expander("Ver Forcas dos Times"):
-        st.markdown(f"**{time_casa} (Casa):**")
-        st.write(f"- Ataque Casa: {forcas[time_casa]['atk_casa']:.2f}")
-        st.write(f"- Defesa Casa: {forcas[time_casa]['def_casa']:.2f}")
+        st.markdown(f"**{time_casa}:**")
+        st.write(f"- Forca de Ataque: {forcas[time_casa]['atk']:.2f}")
+        st.write(f"- Forca de Defesa: {forcas[time_casa]['def']:.2f}")
+        st.write(f"- Gols Pro: {forcas[time_casa]['gf']} | Gols Contra: {forcas[time_casa]['gc']}")
 
-        st.markdown(f"**{time_fora} (Fora):**")
-        st.write(f"- Ataque Fora: {forcas[time_fora]['atk_fora']:.2f}")
-        st.write(f"- Defesa Fora: {forcas[time_fora]['def_fora']:.2f}")
+        st.markdown(f"**{time_fora}:**")
+        st.write(f"- Forca de Ataque: {forcas[time_fora]['atk']:.2f}")
+        st.write(f"- Forca de Defesa: {forcas[time_fora]['def']:.2f}")
+        st.write(f"- Gols Pro: {forcas[time_fora]['gf']} | Gols Contra: {forcas[time_fora]['gc']}")
 
-        st.markdown("**Medias da Liga:**")
-        st.write(f"- Gols por jogo (Casa): {media_casa:.2f}")
-        st.write(f"- Gols por jogo (Fora): {media_fora:.2f}")
+        st.markdown(f"**Media da Liga:** {media_gols:.2f} gols/jogo")
 
 st.markdown("---")
 st.caption("Modelo de Poisson | Premier League 24/25 | Use com responsabilidade")

@@ -151,11 +151,11 @@ else:
                 market_line = p
             except: pass
 
-        # --- CONTAINER ---
+        # --- O CONTAINER DO JOGO (LINHA UNICA) ---
         with st.container():
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 2], gap="small", vertical_alignment="center")
+            c1, c2, c3, c4 = st.columns([3, 2, 2.5, 2], gap="small", vertical_alignment="center")
 
-            # 1. Times
+            # --- COLUNA 1: TIMES ---
             with c1:
                 st.markdown(f"""
 <div style="line-height: 1.4;">
@@ -165,9 +165,9 @@ else:
 </div>
 """, unsafe_allow_html=True)
 
-            # 3. Lesao (Input) - INTELIGENTE
+            # --- COLUNA 3: INPUT DE LESAO (AJUSTADO) ---
             with c3:
-                col_input, col_check = st.columns([3, 1])
+                col_input, col_check = st.columns([3, 2])
 
                 with col_input:
                     player_out = st.selectbox(
@@ -178,54 +178,64 @@ else:
                     )
 
                 with col_check:
-                    is_rival = st.checkbox("Rival?", key=f"chk_{home}", help="Marque se a lesao for no time Visitante")
+                    is_rival = st.checkbox("Rival", key=f"chk_{home}", help="Marque se a lesao for no time Visitante")
 
-            # Calculo Dinamico Corrigido
+            # Calculo Dinamico
             adj_fair = fair_line
             if player_out != "-":
                 impacto = DB_LESAO[player_out]
                 if is_rival:
-                    # Se lesao e no Rival, meu time melhora (Linha desce)
-                    adj_fair -= impacto
+                    adj_fair -= impacto  # Melhora para o Home
                 else:
-                    # Se lesao e no meu time (Casa), meu time piora (Linha sobe)
-                    adj_fair += impacto
+                    adj_fair += impacto  # Piora para o Home
 
-            diff = adj_fair - market_line
-            edge = abs(diff)
-            has_value = edge >= 1.5
+            # --- CALCULO DA DECISAO (LOGICA CORRIGIDA) ---
+            diff = abs(adj_fair - market_line)
+            has_value = diff >= 1.5
 
-            # 2. Numeros
+            # Decidir em quem apostar
+            if adj_fair < market_line:
+                # Modelo acha Home mais forte que mercado -> Apostar no HOME
+                pick_team = home
+                pick_line = market_line
+            else:
+                # Modelo acha Home mais fraco que mercado -> Apostar no VISITANTE
+                pick_team = away
+                pick_line = -market_line
+
+            # --- COLUNA 2: NUMEROS ---
             with c2:
                 cor_modelo = "#ffeb3b" if player_out != "-" else "#4da6ff"
                 st.markdown(f"""
 <div style="display: flex; justify-content: space-around; text-align: center;">
-<div><span class="odds-title">MODELO</span><br><span style="color: {cor_modelo}; font-weight: bold;">{adj_fair:+.1f}</span></div>
-<div style="border-left: 1px solid #444;"></div>
-<div><span class="odds-title">REAL</span><br><span style="color: white; font-weight: bold;">{market_line:+.1f}</span></div>
+<div>
+<div class="odds-title">MODELO</div>
+<div style="color: {cor_modelo}; font-weight: bold; font-size: 1.2em;">{adj_fair:+.1f}</div>
+</div>
+<div style="border-left: 1px solid #444; margin: 0 10px;"></div>
+<div>
+<div class="odds-title">PINNACLE</div>
+<div style="color: white; font-weight: bold; font-size: 1.2em;">{market_line:+.1f}</div>
+</div>
 </div>
 """, unsafe_allow_html=True)
 
-            # 4. Decisao (A Magica)
+            # --- COLUNA 4: VEREDITO ---
             with c4:
                 if has_value:
-                    if diff > 0:
-                        txt_aposta = f"Aposte: {home}"
-                        linha_aposta = f"{market_line:+.1f}"
-                    else:
-                        txt_aposta = f"Aposte: {away}"
-                        linha_aposta = f"{-market_line:+.1f}"
-
                     st.markdown(f"""
-<div style="text-align: right; line-height: 1.2;">
-<span class="ev-badge">VALOR ENCONTRADO</span><br>
-<span style="font-size: 0.9em; color: #eee;">{txt_aposta} <b>{linha_aposta}</b></span><br>
-<span style="font-size: 0.7em; color: #888;">Edge: {edge:.1f} pts</span>
+<div style="text-align: right;">
+<span class="ev-badge">APOSTAR:</span><br>
+<span style="font-weight: bold; color: #fff;">{pick_team} {pick_line:+.1f}</span><br>
+<span style="font-size: 0.7em; color: #00ff00;">Edge: {diff:.1f}</span>
 </div>
 """, unsafe_allow_html=True)
                 else:
-                    st.markdown("""<div style="text-align: right; color: #555; font-size: 0.8em;">Sem Valor<br>Linha Justa</div>""", unsafe_allow_html=True)
+                    st.markdown("""
+<div style="text-align: right; color: #555; font-size: 0.8em;">
+Sem Valor<br>Justo
+</div>
+""", unsafe_allow_html=True)
 
-            # Linha separadora visual
-            strip_class = "strip-value" if has_value else "trade-strip"
-            st.markdown(f'<div class="{strip_class}" style="height: 2px; padding: 0;"></div>', unsafe_allow_html=True)
+            # HR Personalizado
+            st.markdown("<hr style='margin: 5px 0; border-color: #2d313a;'>", unsafe_allow_html=True)

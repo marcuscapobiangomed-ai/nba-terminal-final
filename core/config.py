@@ -34,23 +34,44 @@ class Config:
 
 def get_config() -> Config:
     """
-    Retorna as configurações carregadas do .env
-    Valida que as variáveis obrigatórias estão presentes
+    Retorna as configurações carregadas do .env (local) ou st.secrets (cloud).
     """
-    api_key = os.getenv('ODDS_API_KEY')
+    import streamlit as st
+    
+    # Tenta pegar do ambiente (local com .env) ou das secrets do Streamlit (cloud)
+    def get_var(key, default=None):
+        # 1. Tenta env var
+        val = os.getenv(key)
+        if val: return val
+        
+        # 2. Tenta st.secrets (se disponível e configurado)
+        try:
+            if key in st.secrets:
+                return st.secrets[key]
+        except:
+            pass
+            
+        return default
+
+    api_key = get_var('ODDS_API_KEY')
     
     if not api_key or api_key == 'your_api_key_here':
-        raise ValueError(
-            "❌ ODDS_API_KEY não configurada!\n"
-            "Por favor, copie .env.example para .env e adicione sua API key."
-        )
+        # Fallback silencioso para não quebrar no import se estiver apenas configurando
+        if os.getenv('CI'): return Config('', '', 0.0, 0.0, '')
+        
+        # Mensagem de erro amigável para UI
+        st.error("🔑 ODDS_API_KEY não encontrada!")
+        st.warning("Local: Verifique o arquivo .env\nCloud: Adicione nas 'Secrets' do Streamlit")
+        # Retorna config dummy para permitir que o app renderize a mensagem de erro na UI
+        # ao invés de crashar no hard stop
+        raise ValueError("API Key missing")
     
     return Config(
         odds_api_key=api_key,
-        bets_history_file=os.getenv('BETS_HISTORY_FILE', 'bets_history.csv'),
-        default_bankroll=float(os.getenv('DEFAULT_BANKROLL', '1000.0')),
-        default_unit_percent=float(os.getenv('DEFAULT_UNIT_PERCENT', '1.0')),
-        nba_season=os.getenv('NBA_SEASON', '2024-25')
+        bets_history_file=get_var('BETS_HISTORY_FILE', 'bets_history.csv'),
+        default_bankroll=float(get_var('DEFAULT_BANKROLL', '1000.0')),
+        default_unit_percent=float(get_var('DEFAULT_UNIT_PERCENT', '1.0')),
+        nba_season=get_var('NBA_SEASON', '2024-25')
     )
 
 

@@ -201,15 +201,32 @@ else:
 </div>
 """, unsafe_allow_html=True)
 
+            # --- COLUNA 4: DECISAO COM GESTAO DE BANCA ---
             with c4:
                 if has_value:
+                    # Definindo o tamanho da aposta (Kelly Simplificado)
+                    if diff < 3.0:
+                        stake = "0.75u"
+                        stake_color = "#ffff00"  # Amarelo (Normal)
+                        label_txt = "APOSTAR"
+                    elif diff < 5.0:
+                        stake = "1.5u"
+                        stake_color = "#00ff00"  # Verde (Forte)
+                        label_txt = "VALOR"
+                    else:
+                        stake = "2.0u"
+                        stake_color = "#ff00ff"  # Rosa/Magenta (Extremo)
+                        label_txt = "SUPER EV"
+
                     st.markdown(f"""
 <div style="text-align: right;">
-<span class="ev-badge">APOSTAR:</span><br>
-<span style="font-weight: bold; color: {side_color}; font-size: 0.9em;">
-{pick}<br>{line_pick:+.1f}
+<span style="background-color: {stake_color}; color: black; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;">
+{label_txt} {stake}
 </span><br>
-<span style="font-size: 0.7em; color: #00ff00;">Edge: {diff:.1f}</span>
+<span style="font-weight: bold; color: {side_color}; font-size: 0.9em; display: block; margin-top: 4px;">
+{pick} {line_pick:+.1f}
+</span>
+<span style="font-size: 0.75em; color: #888;">Edge: {diff:.1f} pts</span>
 </div>
 """, unsafe_allow_html=True)
                 else:

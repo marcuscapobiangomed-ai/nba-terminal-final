@@ -4,69 +4,37 @@ import requests
 import feedparser
 from datetime import datetime
 from deep_translator import GoogleTranslator
-from nba_api.stats.endpoints import leaguestandings
+from nba_api.stats.endpoints import leaguestandings, commonteamroster
+from nba_api.stats.static import teams
 
 # --- CONFIGURACAO INICIAL ---
 # st.set_page_config removido - esta no Home.py
-
-# --- SUA CHAVE ---
 API_KEY = "e6a32983f406a1fbf89fda109149ac15"
 
-# --- CSS MODERNO & CLEAN ---
+# --- CSS VISUAL ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; font-family: 'Roboto', sans-serif; }
-
-    /* Animacao de Piscar */
-    @keyframes blink {
-        0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; }
-    }
-    .live-dot {
-        display: inline-block; width: 8px; height: 8px;
-        background-color: #ff0000; border-radius: 50%;
-        margin-right: 6px; animation: blink 1.5s infinite;
-        box-shadow: 0 0 6px #ff0000; vertical-align: middle;
-    }
-
-    /* Tags de Status */
-    .status-live {
-        background-color: #2d1b1b; color: #ff4b4b;
-        padding: 2px 8px; border-radius: 4px;
-        font-size: 0.75em; font-weight: bold; border: 1px solid #5e2a2a;
-    }
-    .status-clock {
-        color: #ffcc00; font-weight: bold; margin-left: 8px; font-family: monospace; font-size: 0.9em;
-    }
-    .status-q {
-        color: #aaa; margin-left: 8px; font-size: 0.8em; font-weight: bold;
-    }
-
-    /* Cards */
-    .trade-strip {
-        background-color: #1c1e26; border-radius: 8px; padding: 15px; margin-bottom: 12px;
-        border-left: 4px solid #444; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    .live-dot { display: inline-block; width: 8px; height: 8px; background-color: #ff0000; border-radius: 50%; margin-right: 6px; animation: blink 1.5s infinite; box-shadow: 0 0 6px #ff0000; vertical-align: middle; }
+    .status-live { background-color: #2d1b1b; color: #ff4b4b; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; border: 1px solid #5e2a2a; }
+    .status-clock { color: #ffcc00; font-weight: bold; margin-left: 8px; font-family: monospace; font-size: 0.9em; }
+    .status-q { color: #aaa; margin-left: 8px; font-size: 0.8em; font-weight: bold; }
+    .trade-strip { background-color: #1c1e26; border-radius: 8px; padding: 15px; margin-bottom: 12px; border-left: 4px solid #444; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
     .strip-live { border-left: 4px solid #ff4b4b; background-color: #1f1a1a; }
     .strip-value { border-left: 4px solid #00ff00; background-color: #1f291f; }
-
     .team-name { font-size: 1.1em; font-weight: 600; color: #eee; }
     .score-live { font-size: 1.4em; font-weight: bold; color: #fff; text-align: right; }
     .time-text { color: #888; font-size: 0.8em; font-weight: bold; }
-
-    /* Noticias */
     .news-card { background-color: #262730; padding: 10px; border-radius: 5px; margin-bottom: 8px; border-left: 3px solid #4da6ff; font-size: 0.9em; }
     .news-alert { border-left: 3px solid #ff4b4b; background-color: #2d1b1b; }
     .news-time { font-size: 0.75em; color: #aaa; margin-bottom: 4px; font-weight: bold; }
-
-    /* Badges */
     .stake-badge { background-color: #00ff00; color: #000; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
     .stake-normal { background-color: #ffff00; color: black; padding: 2px 6px; border-radius: 4px; font-size: 0.8em;}
-
     div[data-baseweb="select"] > div { background-color: #262730; border-color: #444; color: white; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("Gestao")
     banca_total = st.number_input("Banca (R$)", value=1000.0, step=100.0, format="%.2f")
@@ -74,50 +42,82 @@ with st.sidebar:
     valor_unidade = banca_total * (pct_unidade / 100)
     st.markdown(f"""<div style="text-align:center; background-color: #1a1c24; padding: 10px; border-radius: 8px; margin-top:10px;"><small style="color:#888">1 UNIDADE</small><br><span style="font-size: 1.5em; color: #4da6ff; font-weight: bold;">R$ {valor_unidade:.2f}</span></div>""", unsafe_allow_html=True)
 
-# --- FUNCAO DE LIMPEZA DO RELOGIO ---
+# --- 1. IMPACTO DOS JOGADORES (SEM TIME FIXO) ---
+PLAYER_IMPACTS = {
+    # Genericos (Backup)
+    "Estrela (Generico)": 4.5,
+    "Titular Importante (Generico)": 2.5,
+    "Role Player (Generico)": 1.5,
+
+    # Estrelas
+    "Nikola Jokic": 8.5, "Luka Doncic": 7.5, "Giannis Antetokounmpo": 7.0,
+    "Shai Gilgeous-Alexander": 7.0, "Joel Embiid": 6.5, "Jayson Tatum": 5.5,
+    "Stephen Curry": 5.5, "LeBron James": 5.0, "Kevin Durant": 5.0,
+    "Anthony Davis": 5.0, "Victor Wembanyama": 5.0, "Anthony Edwards": 4.5,
+    "Devin Booker": 4.0, "Ja Morant": 4.0, "Jalen Brunson": 4.0,
+    "Donovan Mitchell": 4.0, "Tyrese Haliburton": 3.5, "Kyrie Irving": 3.5,
+    "Trae Young": 3.5, "Jimmy Butler": 3.5, "Damian Lillard": 3.5,
+    "Kawhi Leonard": 3.5, "James Harden": 3.5, "Zion Williamson": 3.5,
+    "Paolo Banchero": 3.5, "De'Aaron Fox": 3.5, "Domantas Sabonis": 3.5,
+    "Bam Adebayo": 3.0, "Jaylen Brown": 3.5, "LaMelo Ball": 3.0,
+    "Cade Cunningham": 3.0, "Alperen Sengun": 3.0, "Tyrese Maxey": 3.0,
+    "Paul George": 3.0, "Karl-Anthony Towns": 3.0, "Chet Holmgren": 3.0,
+    "Jamal Murray": 2.5, "Darius Garland": 2.5, "Klay Thompson": 2.0
+}
+
+# --- 2. FUNCOES DE ELENCO DINAMICO ---
+@st.cache_data(ttl=3600)
+def get_team_id(team_name):
+    """Encontra o ID do time na NBA API baseado no nome"""
+    nba_teams = teams.get_teams()
+    for t in nba_teams:
+        if t['nickname'] in team_name or team_name in t['full_name']:
+            return t['id']
+    return None
+
+@st.cache_data(ttl=3600)
+def get_dynamic_roster(team_name):
+    """Baixa o elenco ATUAL do time direto da NBA API"""
+    tid = get_team_id(team_name)
+    if not tid:
+        return []
+
+    try:
+        roster = commonteamroster.CommonTeamRoster(team_id=tid, season='2024-25').get_data_frames()[0]
+        players_list = roster['PLAYER'].tolist()
+        relevant_players = [p for p in players_list if p in PLAYER_IMPACTS]
+        return relevant_players
+    except:
+        return []
+
+# --- 3. OUTRAS FUNCOES ---
 def clean_nba_clock(raw_clock):
-    # Transforma "PT07M03.00S" em "07:03"
     if not raw_clock: return ""
     try:
         clean = raw_clock.replace("PT", "").replace("S", "")
         if "M" in clean:
             parts = clean.split("M")
-            mins = parts[0]
-            secs = parts[1].split(".")[0]
-            return f"{mins}:{secs}"
+            return f"{parts[0]}:{parts[1].split('.')[0]}"
         return clean
-    except:
-        return raw_clock
+    except: return raw_clock
 
-# --- 1. DADOS AO VIVO ---
 @st.cache_data(ttl=20)
 def get_nba_live_scores():
     try:
-        url = "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
-        data = requests.get(url).json()
-        games = data['scoreboard']['games']
-
+        data = requests.get("https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json").json()
         live_data = {}
-        for g in games:
-            status = g['gameStatus']
-            home = g['homeTeam']['teamName']
-
-            relogio_formatado = clean_nba_clock(g['gameClock'])
-
+        for g in data['scoreboard']['games']:
+            clock = clean_nba_clock(g['gameClock'])
             info = {
-                "live": status == 2,
-                "period": g['period'],
-                "clock": relogio_formatado,
-                "score_home": g['homeTeam']['score'],
-                "score_away": g['awayTeam']['score']
+                "live": g['gameStatus'] == 2,
+                "period": g['period'], "clock": clock,
+                "score_home": g['homeTeam']['score'], "score_away": g['awayTeam']['score']
             }
-            live_data[home] = info
+            live_data[g['homeTeam']['teamName']] = info
             live_data[g['awayTeam']['teamName']] = info
-
         return live_data
     except: return {}
 
-# --- 2. NOTICIAS TRADUZIDAS ---
 @st.cache_data(ttl=600)
 def get_news():
     try:
@@ -135,7 +135,6 @@ def get_news():
         return noticias
     except: return []
 
-# --- 3. DADOS ESTATICOS ---
 @st.cache_data(ttl=86400)
 def get_ratings():
     try:
@@ -148,17 +147,10 @@ def get_odds(api_key):
     try: return requests.get(f'https://api.the-odds-api.com/v4/sports/basketball_nba/odds', params={'api_key': api_key, 'regions': 'us,eu', 'markets': 'spreads', 'oddsFormat': 'decimal', 'bookmakers': 'pinnacle,bet365'}).json()
     except: return []
 
-DB_LESAO_FULL = {
-    "Nikola Jokic": [8.5, "Nuggets"], "Luka Doncic": [7.0, "Mavericks"], "Giannis": [6.5, "Bucks"],
-    "SGA": [6.5, "Thunder"], "Embiid": [6.0, "76ers"], "Tatum": [5.0, "Celtics"], "LeBron": [4.5, "Lakers"],
-    "AD": [4.5, "Lakers"], "Durant": [4.5, "Suns"], "Curry": [5.0, "Warriors"], "Morant": [4.0, "Grizzlies"],
-    "Mitchell": [4.0, "Cavaliers"], "Brunson": [3.5, "Knicks"], "Wembanyama": [4.5, "Spurs"]
-}
-
-# --- INTERFACE ---
+# --- APP PRINCIPAL ---
 c1, c2 = st.columns([5, 1])
-c1.title("NBA Terminal Pro v5.1")
-if c2.button("LIVE SCAN", type="primary"):
+c1.title("NBA Terminal Pro v6.0 (Auto-Roster)")
+if c2.button("SCAN LIVE", type="primary"):
     st.cache_data.clear()
     st.rerun()
 
@@ -180,15 +172,7 @@ LIVE_SCORES = get_nba_live_scores()
 if not ODDS or isinstance(ODDS, dict):
     st.info("Mercado fechado.")
 else:
-    # Header da Tabela
-    st.markdown("""
-    <div style="display: flex; color: #666; font-size: 0.8em; padding: 0 15px; margin-bottom: 5px; font-weight: bold;">
-        <div style="flex: 3;">JOGO & STATUS</div>
-        <div style="flex: 2; text-align: center;">LINHAS</div>
-        <div style="flex: 2; padding-left: 10px;">FILTRO</div>
-        <div style="flex: 1.5; text-align: right;">DECISAO</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div style="display: flex; color: #666; font-size: 0.8em; padding: 0 15px; margin-bottom: 5px; font-weight: bold;"><div style="flex: 3;">JOGO & STATUS</div><div style="flex: 2; text-align: center;">LINHAS</div><div style="flex: 2; padding-left: 10px;">FILTRO (AUTO-UPDATE)</div><div style="flex: 1.5; text-align: right;">DECISAO</div></div>""", unsafe_allow_html=True)
 
     for game in ODDS:
         home = game['home_team']
@@ -198,10 +182,9 @@ else:
         live_info = None
         for k, v in LIVE_SCORES.items():
             if k in home or home in k: live_info = v; break
-
         is_live = live_info['live'] if live_info else False
 
-        # Ratings & Lines
+        # Ratings
         r_home = RATINGS.get(home, RATINGS.get(home.split()[-1], 0))
         r_away = RATINGS.get(away, RATINGS.get(away.split()[-1], 0))
         fair_line = -((r_home + 2.5) - r_away)
@@ -214,6 +197,14 @@ else:
                 market_line = p; break
         if market_line == 0.0: continue
 
+        # --- LOGICA DE ELENCO DINAMICO ---
+        roster_home = get_dynamic_roster(home)
+        roster_away = get_dynamic_roster(away)
+
+        generics = ["Estrela (Generico)", "Titular Importante (Generico)"]
+        options_home = ["-"] + roster_home + generics
+        options_away = ["-"] + roster_away + generics
+
         # Container
         css_strip = "strip-live" if is_live else "trade-strip"
         with st.container():
@@ -221,32 +212,23 @@ else:
 
             with c_g:
                 if is_live:
-                    st.markdown(f"""
-                    <div style="line-height:1.2;">
-                        <div style="margin-bottom:6px;">
-                            <span class="status-live"><span class="live-dot"></span>AO VIVO</span>
-                            <span class="status-q">Q{live_info['period']}</span>
-                            <span class="status-clock">{live_info['clock']}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:2px; margin-bottom:2px;">
-                            <span class="team-name">{away}</span> <span class="score-live">{live_info['score_away']}</span>
-                        </div>
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span class="team-name">{home}</span> <span class="score-live">{live_info['score_home']}</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(f"""<div style="line-height:1.2;"><div style="margin-bottom:6px;"><span class="status-live"><span class="live-dot"></span>AO VIVO</span><span class="status-q">Q{live_info['period']}</span><span class="status-clock">{live_info['clock']}</span></div><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333; padding-bottom:2px; margin-bottom:2px;"><span class="team-name">{away}</span> <span class="score-live">{live_info['score_away']}</span></div><div style="display:flex; justify-content:space-between; align-items:center;"><span class="team-name">{home}</span> <span class="score-live">{live_info['score_home']}</span></div></div>""", unsafe_allow_html=True)
                 else:
                     time_start = pd.to_datetime(game['commence_time']).strftime('%H:%M')
                     st.markdown(f"""<div style="line-height:1.5;"><span class="time-text">{time_start}</span><div>{away} <span style="font-size:0.8em;color:#aaa">({r_away:+.1f})</span></div><div style="color:#444">@</div><div>{home} <span style="font-size:0.8em;color:#aaa">({r_home:+.1f})</span></div></div>""", unsafe_allow_html=True)
 
             with c_f:
-                jogadores = [j for j, d in DB_LESAO_FULL.items() if d[1] in home or d[1] in away]
-                p_out = st.selectbox("OUT?", ["-"]+jogadores, key=f"ls_{home}", label_visibility="collapsed")
-                if p_out != "-":
-                    imp, tm = DB_LESAO_FULL[p_out]
-                    if tm in home: fair_line += imp
-                    else: fair_line -= imp
+                # Dois selects separados
+                p_out_h = st.selectbox(f"Fora ({home.split()[-1]})?", options_home, key=f"ls_h_{home}", index=0)
+                p_out_a = st.selectbox(f"Fora ({away.split()[-1]})?", options_away, key=f"ls_a_{home}", index=0)
+
+                if p_out_h != "-":
+                    imp = PLAYER_IMPACTS.get(p_out_h, 2.5)
+                    fair_line += imp
+
+                if p_out_a != "-":
+                    imp = PLAYER_IMPACTS.get(p_out_a, 2.5)
+                    fair_line -= imp
 
             diff = abs(fair_line - market_line)
             has_value = diff >= 1.5
@@ -261,7 +243,6 @@ else:
                     units = 1.5 if diff > 3 else 0.75
                     val = valor_unidade * units
                     css_badge = "stake-badge" if diff > 3 else "stake-normal"
-
                     st.markdown(f"""<div style="text-align:right;"><span class="{css_badge}">R$ {val:.0f}</span><br><span style="color:{'#4da6ff' if pick==home else '#ffcc00'};font-weight:bold;">{pick} {line:+.1f}</span><div style="font-size:0.7em;color:#888">Edge: {diff:.1f}</div></div>""", unsafe_allow_html=True)
                 else:
                     st.markdown(f"""<div style="text-align:right;color:#555;font-size:0.8em">Justo</div>""", unsafe_allow_html=True)

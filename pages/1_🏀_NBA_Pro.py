@@ -231,7 +231,8 @@ def parse_clock_to_minutes(clock_str, period):
         return period * 12
 
 # --- 7. DADOS AO VIVO COM BOX SCORE ---
-@st.cache_data(ttl=20)
+# TTL=5s para "Janela de Ouro" (~20s de vantagem sobre TV)
+@st.cache_data(ttl=5)
 def get_nba_live_data():
     """Busca placares E estatisticas detalhadas ao vivo"""
     try:

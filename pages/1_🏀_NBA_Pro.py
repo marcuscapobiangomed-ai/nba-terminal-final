@@ -8,8 +8,14 @@ import textwrap # <--- A SOLUÇÃO MÁGICA
 import plotly.express as px
 from datetime import datetime
 from deep_translator import GoogleTranslator
-from nba_api.stats.endpoints import leaguedashteamstats
+import sys
 from pathlib import Path
+
+# Adiciona diretório raiz ao path para importar 'core' corretamente
+root_path = Path(__file__).parent.parent
+if str(root_path) not in sys.path:
+    sys.path.append(str(root_path))
+
 from core.player_props import PlayerPropsEngine
 from core.star_impact import get_team_stars
 

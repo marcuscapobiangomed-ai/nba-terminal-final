@@ -1,6 +1,6 @@
 # 🏀 NBA Terminal Pro
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=marcuscapobiangomed-ai/apostas-bot-nba&branch=main&mainModule=Home.py)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=marcuscapobiangomed-ai/nba-terminal-final&branch=main&mainModule=Home.py)
 
 Central de Inteligência Esportiva e Análise Quantitativa.
 

@@ -1,563 +1,333 @@
-"""
-NBA Terminal Pro v12.0 - Modular Edition
-Versão refatorada com arquitetura modular e modelo matemático melhorado
-"""
 import streamlit as st
 import pandas as pd
+import requests
+import feedparser
+import os
 import plotly.express as px
 from datetime import datetime
-import sys
-from pathlib import Path
+from deep_translator import GoogleTranslator
+from nba_api.stats.endpoints import leaguedashteamstats
 
-# Adiciona o diretório raiz ao path para imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# --- 1. CONFIGURAÇÃO & ESTADO ---
+st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
 
-# Imports dos módulos core
-from core.config import get_config, STAR_PLAYERS, REBOUNDERS
-from core.data_fetcher import (
-    get_team_stats, get_odds, get_live_scores, get_news,
-    find_team_stats, parse_market_odds
-)
-from core.odds_engine import (
-    calculate_fair_spread, calculate_fair_total_simple,
-    calculate_edge, get_stake_units, four_factors_advantage
-)
-from core.backoffice import (
-    load_history, save_bet, update_results, calculate_metrics, get_cumulative_profit
-)
-
-# --- 1. CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="NBA Terminal Pro v12", page_icon="🏆", layout="wide")
-
-# Carrega configuração do .env
+# Tenta pegar a chave dos segredos ou usa a hardcoded (fallback)
 try:
-    CONFIG = get_config()
-except ValueError as e:
-    st.error(str(e))
-    st.stop()
+    API_KEY = st.secrets["ODDS_API_KEY"]
+except:
+    API_KEY = "e6a32983f406a1fbf89fda109149ac15"
 
-# --- 2. CSS VISUAL (NEON DARK PRO) ---
+HISTORY_FILE = "bets_history.csv"
+
+# Inicializa Estado
+if 'banca' not in st.session_state: st.session_state.banca = 1000.0
+if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0
+
+# --- 2. CSS PREMIUM (DESIGN OVERHAUL) ---
 st.markdown("""
     <style>
-    /* Reset & Fonts */
-    .stApp { background-color: #0b0c0e; font-family: 'Inter', system-ui, sans-serif; }
+    /* Importando Fontes Modernas */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
-    /* Cores de Texto - Alto Contraste */
-    h1, h2, h3, h4, b, strong { color: #ffffff !important; }
-    p, span, div { color: #e0e0e0; }
-    small { color: #b0b0b0 !important; }
-    
-    /* Animação Live */
-    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
-    .live-dot { display: inline-block; width: 10px; height: 10px; background-color: #ff2b2b; border-radius: 50%; margin-right: 8px; animation: blink 1.2s infinite; box-shadow: 0 0 10px #ff2b2b; }
-    
-    /* Cartões de Jogo */
-    .game-card { 
-        background-color: #16181c; 
-        border: 1px solid #333;
-        border-radius: 8px; 
-        padding: 16px; 
-        margin-bottom: 12px; 
-        border-left: 4px solid #555; 
-        box-shadow: 0 2px 5px rgba(0,0,0,0.2); 
+    /* RESET GLOBAL */
+    .stApp { 
+        background-color: #0f172a; /* Slate 900 - Fundo Azulado Profundo */
+        font-family: 'Inter', sans-serif;
     }
-    .game-card:hover { border-color: #666; background-color: #1c1f24; }
+    
+    /* CARD DESIGN (Glassmorphism Sutil) */
+    .game-card { 
+        background-color: #1e293b; /* Slate 800 */
+        border: 1px solid #334155; /* Slate 700 */
+        border-radius: 12px; 
+        padding: 20px; 
+        margin-bottom: 16px; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        transition: transform 0.2s;
+    }
+    .game-card:hover { border-color: #475569; }
     
     .card-live { 
-        background-color: #1a1010; 
-        border: 1px solid #4a2020;
-        border-left: 4px solid #ff4b4b; 
+        background: linear-gradient(145deg, #1e293b 0%, #2a1b1b 100%);
+        border-left: 5px solid #ef4444; 
     }
     
-    .card-value { 
-        background-color: #0f1612; 
-        border: 1px solid #1a4030;
-        border-left: 4px solid #00ff88; 
+    /* TIPOGRAFIA HIERÁRQUICA */
+    .team-name { 
+        font-size: 1.25rem; /* 20px */
+        font-weight: 700; 
+        color: #f8fafc; /* Slate 50 */
+        margin-bottom: 4px;
+        line-height: 1.2;
     }
     
-    /* Badges e Elementos UI */
-    .stake-badge { 
-        background-color: #00ff88; 
-        color: #000000 !important; 
+    .score-big { 
+        font-size: 2rem; /* 32px */
         font-weight: 800; 
-        padding: 4px 12px; 
-        border-radius: 4px; 
-        font-size: 0.9em; 
-        box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+        color: #ffffff;
+        letter-spacing: -1px;
     }
     
-    .metric-box { 
-        background-color: #1c1e24; 
-        padding: 15px; 
-        border-radius: 8px; 
-        border: 1px solid #333; 
-        text-align: center; 
+    .metric-label { 
+        font-size: 0.85rem; /* 13.6px - Bem maior que antes */
+        font-weight: 600;
+        color: #94a3b8; /* Slate 400 */
+        text-transform: uppercase; 
+        letter-spacing: 0.05em;
+        margin-bottom: 2px;
     }
-    .metric-label { font-size: 0.75em; color: #a0a0a0; text-transform: uppercase; font-weight: 600; }
-    .metric-val { font-size: 1.4em; font-weight: 700; color: #ffffff; }
     
-    /* News */
-    .news-card { background-color: #1e2026; padding: 12px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #4da6ff; color: #ddd; }
-    .news-alert { background-color: #2b1515; border-left: 3px solid #ff4b4b; color: #fff; }
+    .metric-value { 
+        font-size: 1.4rem; /* 22px */
+        font-weight: 700; 
+        color: #e2e8f0; 
+    }
     
-    /* Ajustes Streamlit */
-    div[data-testid="stExpander"] { background-color: #16181c; border-radius: 6px; }
+    .status-badge {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: #cbd5e1;
+        background-color: #334155;
+        padding: 4px 10px;
+        border-radius: 99px;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+
+    /* BOTÕES DE AÇÃO */
+    .bet-button {
+        background-color: #22c55e; /* Green 500 */
+        color: #022c22;
+        font-weight: 800;
+        padding: 8px 16px;
+        border-radius: 8px;
+        text-align: center;
+        box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+        border: 1px solid #4ade80;
+    }
+    
+    .no-value {
+        color: #64748b;
+        font-size: 0.9rem;
+        font-style: italic;
+    }
+    
+    /* NOTÍCIAS */
+    .news-card { background-color: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #3b82f6; margin-bottom: 8px; }
+    .news-title { font-size: 1rem; color: #e2e8f0; line-height: 1.4; }
+    .news-time { font-size: 0.8rem; color: #94a3b8; font-weight: bold; margin-bottom: 4px; }
+    
+    /* AJUSTES STREAMLIT */
+    div[data-testid="stExpander"] { background-color: #1e293b; border-radius: 8px; border: 1px solid #334155; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. ESTADO DA SESSÃO ---
-if 'banca' not in st.session_state:
-    st.session_state.banca = CONFIG.default_bankroll
-if 'unidade_pct' not in st.session_state:
-    st.session_state.unidade_pct = CONFIG.default_unit_percent
+# --- 3. FUNÇÕES (MANTIDAS IGUAIS) ---
+def load_history():
+    if not os.path.exists(HISTORY_FILE): return pd.DataFrame(columns=["Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
+    return pd.read_csv(HISTORY_FILE)
 
-# --- 4. BARRA LATERAL ---
-with st.sidebar:
-    st.header("💰 Gestão de Banca")
-    st.session_state.banca = st.number_input(
-        "Banca (R$)", 
-        value=st.session_state.banca, 
-        step=100.0,
-        min_value=100.0
-    )
-    st.session_state.unidade_pct = st.slider(
-        "Unidade (%)", 
-        0.5, 5.0, 
-        st.session_state.unidade_pct, 
-        step=0.5
-    )
-    val_unid = st.session_state.banca * (st.session_state.unidade_pct / 100)
-    
-    st.markdown(f"""
-    <div class="metric-box">
-        <div class="metric-label">Valor 1 Unidade</div>
-        <div class="metric-val" style="color: #4da6ff;">R$ {val_unid:.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # Quick Stats
-    df_hist = load_history()
-    if not df_hist.empty:
-        metrics = calculate_metrics(df_hist)
-        st.markdown(f"""
-        <div style="font-size: 0.85em; color: #aaa;">
-            <b>📊 Quick Stats</b><br>
-            Apostas: {metrics.total_bets} ({metrics.pending_bets} pendentes)<br>
-            Winrate: <span style="color: {'#00ff88' if metrics.winrate > 50 else '#ff4b4b'}">{metrics.winrate:.1f}%</span><br>
-            ROI: <span style="color: {'#00ff88' if metrics.roi > 0 else '#ff4b4b'}">{metrics.roi:+.1f}%</span>
-        </div>
-        """, unsafe_allow_html=True)
+def save_bet(jogo, tipo, aposta, odd, valor):
+    df = load_history()
+    new_row = pd.DataFrame([{"Data": datetime.now().strftime("%Y-%m-%d %H:%M"), "Jogo": jogo, "Tipo": tipo, "Aposta": aposta, "Odd": odd, "Valor": valor, "Resultado": "Pendente", "Lucro": 0.0}])
+    df = pd.concat([df, new_row], ignore_index=True)
+    df.to_csv(HISTORY_FILE, index=False)
+    st.toast(f"✅ Aposta Registrada: {aposta}")
 
-# --- 5. FUNÇÕES AUXILIARES ---
 @st.cache_data(ttl=86400)
-def cached_team_stats():
-    return get_team_stats(CONFIG.nba_season)
+def get_advanced_team_stats():
+    try:
+        stats = leaguedashteamstats.LeagueDashTeamStats(season='2024-25', measure_type_detailed_defense='Base').get_data_frames()[0]
+        data = {}
+        for _, row in stats.iterrows():
+            data[row['TEAM_NAME']] = {'pace': row['PACE'], 'efg': row['EFG_PCT'], 'net_rtg': row['PTS'] - row['OPP_PTS'], 'def_rtg': row['DEF_RATING']}
+        return data
+    except: return {}
 
-@st.cache_data(ttl=60)
-def cached_odds():
-    return get_odds()
+def clean_clock(raw):
+    if not raw: return ""
+    if "M" in raw: return f"{raw.replace('PT','').split('M')[0]}:{raw.split('M')[1].replace('S','').split('.')[0]}"
+    return raw
 
 @st.cache_data(ttl=20)
-def cached_live_scores():
-    return get_live_scores()
+def get_live_scores():
+    try:
+        data = requests.get("https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json").json()
+        live = {}
+        for g in data['scoreboard']['games']:
+            info = {"live": g['gameStatus'] == 2, "period": g['period'], "clock": clean_clock(g['gameClock']), 
+                    "s_home": g['homeTeam']['score'], "s_away": g['awayTeam']['score']}
+            live[g['homeTeam']['teamName']] = info; live[g['awayTeam']['teamName']] = info
+        return live
+    except: return {}
+
+def get_odds(api_key):
+    try: return requests.get(f'https://api.the-odds-api.com/v4/sports/basketball_nba/odds', params={'api_key': api_key, 'markets': 'spreads,totals', 'bookmakers': 'pinnacle'}).json()
+    except: return []
 
 @st.cache_data(ttl=600)
-def cached_news():
-    return get_news()
+def get_news():
+    try:
+        feed = feedparser.parse("https://www.espn.com/espn/rss/nba/news")
+        noticias = []
+        trans = GoogleTranslator(source='auto', target='pt')
+        for e in feed.entries[:3]:
+            try: tit = trans.translate(e.title).replace("Fontes:", "").strip()
+            except: tit = e.title
+            noticias.append({"titulo": tit, "hora": datetime(*e.published_parsed[:6]).strftime("%H:%M")})
+        return noticias
+    except: return []
 
+# --- 4. INTERFACE PRINCIPAL ---
+st.title("🏆 NBA Terminal Pro")
 
-def generate_prop_insights(home, away, pace_proj, mkt_total, stats_h, stats_a):
-    """Gera insights para props baseado em correlações"""
-    insights = []
-    
-    is_fast = pace_proj > CONFIG.fast_pace_threshold
-    h_bad_def = stats_h.get('def_rtg', 110) > CONFIG.bad_defense_threshold
-    a_bad_def = stats_a.get('def_rtg', 110) > CONFIG.bad_defense_threshold
-    
-    # Props de pontos
-    for star in STAR_PLAYERS.get(away, []):
-        if is_fast and h_bad_def:
-            insights.append({
-                "player": star,
-                "type": "OVER PONTOS",
-                "reason": f"Ritmo Alto ({pace_proj:.0f}) + {home} com defesa fraca (DefRtg {stats_h.get('def_rtg', 110):.0f})"
-            })
-    
-    for star in STAR_PLAYERS.get(home, []):
-        if is_fast and a_bad_def:
-            insights.append({
-                "player": star,
-                "type": "OVER PONTOS",
-                "reason": f"Ritmo Alto ({pace_proj:.0f}) + {away} com defesa fraca (DefRtg {stats_a.get('def_rtg', 110):.0f})"
-            })
-    
-    # Props de rebotes
-    if stats_h.get('efg', 0.55) < 0.52 and stats_a.get('efg', 0.55) < 0.52:
-        all_players = STAR_PLAYERS.get(home, []) + STAR_PLAYERS.get(away, [])
-        for player in all_players:
-            if player in REBOUNDERS:
-                insights.append({
-                    "player": player,
-                    "type": "OVER REBOTES",
-                    "reason": "Baixa eficiência (eFG% < 52%) = mais erros = mais rebotes"
-                })
-    
-    return insights
+# Sidebar Limpa
+with st.sidebar:
+    st.header("💰 Gestão")
+    st.session_state.banca = st.number_input("Banca Total (R$)", value=st.session_state.banca, step=100.0)
+    st.session_state.unidade_pct = st.slider("Unidade (%)", 0.5, 5.0, st.session_state.unidade_pct, step=0.5)
+    val_unid = st.session_state.banca * (st.session_state.unidade_pct / 100)
+    st.markdown(f"""
+    <div style="background:#1e293b; padding:15px; border-radius:10px; border:1px solid #334155; text-align:center;">
+        <div style="color:#94a3b8; font-size:0.8rem; font-weight:600; margin-bottom:5px;">VALOR DA UNIDADE</div>
+        <div style="color:#38bdf8; font-size:1.8rem; font-weight:800;">R$ {val_unid:.2f}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
+# Tabs
+tab_ops, tab_adm = st.tabs(["⚡ OPERAÇÕES", "📊 RESULTADOS"])
 
-# --- 6. INTERFACE PRINCIPAL ---
-st.title("🏆 NBA Terminal Pro v12.0")
-st.caption("Arquitetura modular | Modelo matemático melhorado | Paper Trading")
-
-# Abas Principais
-tab_main, tab_backoffice = st.tabs(["⚡ TERMINAL DE OPERAÇÕES", "💼 BACKOFFICE & ROI"])
-
-# === TAB PRINCIPAL ===
-with tab_main:
-    col_title, col_btn = st.columns([5, 1])
-    with col_btn:
-        if st.button("🔴 SCAN", type="primary", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-    
-    # News Ticker
-    news = cached_news()
+with tab_ops:
+    c_btn, c_news = st.columns([1, 4])
+    if c_btn.button("🔄 SCAN LIVE", type="primary", use_container_width=True):
+        st.cache_data.clear(); st.rerun()
+        
+    news = get_news()
     if news:
-        with st.expander("📰 BREAKING NEWS", expanded=True):
-            cols = st.columns(min(3, len(news)))
+        with st.expander("📰 MANCHETES", expanded=False):
+            cols = st.columns(3)
             for i, n in enumerate(news):
-                css = "news-alert" if n.get('alerta') else "news-card"
-                with cols[i % len(cols)]:
-                    st.markdown(f"""
-                    <div class="{css}">
-                        <b style="color:#ccc">{n['hora']}</b> {n['titulo']}
-                    </div>
-                    """, unsafe_allow_html=True)
+                with cols[i]: st.markdown(f"<div class='news-card'><div class='news-time'>{n['hora']}</div><div class='news-title'>{n['titulo']}</div></div>", unsafe_allow_html=True)
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    # Carrega Dados
-    TEAM_STATS = cached_team_stats()
-    ODDS = cached_odds()
-    LIVE_SCORES = cached_live_scores()
+    # DADOS
+    STATS = get_advanced_team_stats()
+    ODDS = get_odds(API_KEY)
+    LIVE = get_live_scores()
     
-    # Sub-Abas
-    subtab_spread, subtab_totals, subtab_props = st.tabs([
-        "📊 SPREAD & TÁTICA", 
-        "⏱️ TOTALS (O/U)", 
-        "🎯 PROPS CORRELATION"
-    ])
-    
-    if not ODDS or isinstance(ODDS, dict):
-        st.info("🔒 Mercado fechado ou limite de API excedido.")
+    if not ODDS or isinstance(ODDS, dict) and 'message' in ODDS:
+        st.info("Mercado Fechado ou Sem Jogos (API Limit ou Offseason).")
+        # Fallback para debug se a API falhar
+        # st.write(ODDS) 
     else:
-        props_collection = []
-        
-        for game in ODDS:
-            home = game['home_team']
-            away = game['away_team']
-            
-            # Dados Live
-            live_info = LIVE_SCORES.get(home, {})
-            is_live = live_info.get('live', False)
-            
-            # Stats dos times
-            s_h = find_team_stats(home, TEAM_STATS)
-            s_a = find_team_stats(away, TEAM_STATS)
-            
-            # Odds de mercado
-            market = parse_market_odds(game)
-            if market['spread'] == 0.0:
-                continue
-            
-            # === CÁLCULOS DO MODELO ===
-            
-            # Net Rating real
-            home_net = s_h.get('net_rtg', s_h.get('off_rtg', 110) - s_h.get('def_rtg', 110))
-            away_net = s_a.get('net_rtg', s_a.get('off_rtg', 110) - s_a.get('def_rtg', 110))
-            
-            # Fair Spread
-            fair_spread = calculate_fair_spread(home_net, away_net, CONFIG.home_advantage)
-            
-            # Pace e Total
-            avg_pace = (s_h.get('pace', 100) + s_a.get('pace', 100)) / 2
-            pace_display = avg_pace
-            proj_total = calculate_fair_total_simple(avg_pace, 2.2)
-            
-            # Ajuste para jogos ao vivo
-            if is_live and live_info.get('period', 0) > 0:
-                period = live_info['period']
+        # Se ODDS for uma lista vazia ou válida
+        if not ODDS:
+             st.info("Nenhum jogo encontrado para hoje.")
+        else:
+            for game in ODDS:
+                h, a = game['home_team'], game['away_team']
+                
+                # Info Live
+                linfo = None
+                for k, v in LIVE.items():
+                    if k in h or h in k: linfo = v; break
+                is_live = linfo['live'] if linfo else False
+                
+                # Modelagem
+                s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
+                s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
+                fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
+                
+                # Market
+                m_spr = 0.0
                 try:
-                    mins_played = ((period - 1) * 12) + (12 - int(live_info.get('clock', '12:00').split(':')[0]))
+                    for s in game.get('bookmakers', []):
+                        for m in s.get('markets', []):
+                            if m['key'] == 'spreads':
+                                for o in m['outcomes']:
+                                    if o['name'] == h: p = o['point']; m_spr = p; break
+                                    elif o['name'] == a: p = o['point']; m_spr = -p; break # Se away é favorito (-), spread home é (+). Logica simplificada aqui.
+                                break # Achou spread
+                        if m_spr != 0.0: break
                 except:
-                    mins_played = 1
+                    pass
                 
-                if mins_played > 5:
-                    curr_pts = live_info.get('score_home', 0) + live_info.get('score_away', 0)
-                    live_pace = (curr_pts / mins_played) * 48
-                    weight = min(1.0, (mins_played / 40) ** 0.8)
-                    pace_display = (avg_pace * (1 - weight)) + (live_pace * weight)
-                    proj_total = (curr_pts / mins_played) * 48
-            
-            # Edge calculations
-            edge_spread = calculate_edge(fair_spread, market['spread'])
-            edge_total = calculate_edge(proj_total, market['total']) if market['total'] > 0 else 0
-            
-            # Four Factors
-            ff = four_factors_advantage(
-                s_h.get('efg', 0.54), s_h.get('tov', 0.14), s_h.get('orb', 0.25), s_h.get('ftr', 0.25),
-                s_a.get('efg', 0.54), s_a.get('tov', 0.14), s_a.get('orb', 0.25), s_a.get('ftr', 0.25)
-            )
-            
-            # Props
-            game_props = generate_prop_insights(home, away, pace_display, market['total'], s_h, s_a)
-            if game_props:
-                props_collection.append({"game": f"{away} @ {home}", "props": game_props})
-            
-            # === RENDERIZAÇÃO SPREAD ===
-            with subtab_spread:
-                css_class = "card-live" if is_live else ("card-value" if edge_spread >= CONFIG.min_edge_spread else "game-card")
+                if m_spr == 0.0: continue
+                
+                # Layout do Card
+                css_card = "game-card card-live" if is_live else "game-card"
                 
                 with st.container():
-                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                    c1, c2, c3 = st.columns([3, 2, 2])
+                    st.markdown(f"""<div class="{css_card}">""", unsafe_allow_html=True)
                     
-                    # Status
-                    if is_live:
-                        status = f"<span class='live-dot'></span>Q{live_info.get('period', 1)} {live_info.get('clock', '')}"
-                        score = f"{live_info.get('score_away', 0)} - {live_info.get('score_home', 0)}"
-                    else:
-                        status = pd.to_datetime(game['commence_time']).strftime('%H:%M')
-                        score = "vs"
+                    # Header: Status e Times
+                    c1, c2, c3 = st.columns([3.5, 2, 2.5])
+                    
+                    status_txt = f"🔴 Q{linfo['period']} • {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
+                    s_txt_a = linfo['s_away'] if is_live and linfo else ""
+                    s_txt_h = linfo['s_home'] if is_live and linfo else ""
                     
                     with c1:
-                        st.markdown(f"""
-                        <b>{away}</b> {score} <b>{home}</b><br>
-                        <span style="color:#aaa">{status}</span>
-                        """, unsafe_allow_html=True)
-                        
-                        # Four Factors summary
-                        if not is_live:
-                            efg_color = "#00ffaa" if ff['efg_diff'] > 0 else "#ff4b4b"
-                            st.markdown(f"""
-                            <span style="font-size:0.8em">
-                                eFG%: <b style="color:{efg_color}">{ff['efg_diff']:+.1%}</b> | 
-                                4F Adv: <b>{ff['home_advantage']:+.2f}</b>
-                            </span>
-                            """, unsafe_allow_html=True)
+                        st.markdown(f"<span class='status-badge'>{status_txt}</span>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='team-name'>{a}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='team-name'>{h}</div>", unsafe_allow_html=True)
                     
+                    # Scores (Coluna do Meio)
                     with c2:
-                        st.markdown(f"""
-                        <div style="text-align:center">
-                            <small class="metric-label">MODELO vs MERCADO</small><br>
-                            <b style="color:#4da6ff; font-size:1.2em">{fair_spread:+.1f}</b>
-                            <small style="color:#666"> vs </small>
-                            <b style="font-size:1.1em">{market['spread']:+.1f}</b><br>
-                            <small style="color:#888">Edge: {edge_spread:.1f} pts</small>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with c3:
-                        if edge_spread >= CONFIG.min_edge_spread:
-                            pick = home if fair_spread < market['spread'] else away
-                            line = market['spread'] if pick == home else -market['spread']
-                            units = get_stake_units(edge_spread, CONFIG.min_edge_spread)
-                            val_bet = val_unid * units
-                            
-                            c_txt, c_btn = st.columns([2, 1])
-                            with c_txt:
-                                st.markdown(f"""
-                                <div style="text-align:right">
-                                    <span class="stake-badge">R$ {val_bet:.0f}</span><br>
-                                    <b>{pick}</b> {line:+.1f}
-                                </div>
-                                """, unsafe_allow_html=True)
-                            with c_btn:
-                                if st.button("📝", key=f"s_{game['id']}", help=f"Registrar {pick} {line:+.1f}"):
-                                    save_bet(f"{away} @ {home}", "Spread", f"{pick} {line:+.1f}", 1.91, val_bet)
-                                    st.toast(f"✅ Registrado: {pick} {line:+.1f}")
-                        else:
-                            st.markdown("<div style='text-align:right;color:#555'>Linha Justa</div>", unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-            
-            # === RENDERIZAÇÃO TOTALS ===
-            with subtab_totals:
-                css_class = "card-live" if is_live else ("card-value" if edge_total >= CONFIG.min_edge_total else "game-card")
-                
-                with st.container():
-                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-                    c1, c2, c3 = st.columns([3, 2, 2])
-                    
-                    with c1:
-                        st.markdown(f"""
-                        <b>{away} @ {home}</b><br>
-                        <span style="color:#aaa">Pace: {pace_display:.1f}</span>
-                        """, unsafe_allow_html=True)
-                    
-                    with c2:
-                        st.markdown(f"""
-                        <div style="text-align:center">
-                            <small class="metric-label">PROJEÇÃO vs LINHA</small><br>
-                            <b style="color:#4da6ff; font-size:1.2em">{proj_total:.0f}</b>
-                            <small style="color:#666"> vs </small>
-                            <b style="font-size:1.1em">{market['total']}</b>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with c3:
-                        if edge_total >= CONFIG.min_edge_total and market['total'] > 0:
-                            trend = "OVER" if proj_total > market['total'] else "UNDER"
-                            color = "#00ffaa" if trend == "OVER" else "#ff4b4b"
-                            units = get_stake_units(edge_total, CONFIG.min_edge_total)
-                            val_bet = val_unid * units
-                            
-                            c_txt, c_btn = st.columns([2, 1])
-                            with c_txt:
-                                st.markdown(f"""
-                                <div style="text-align:right">
-                                    <span class="stake-badge" style="background:{color}">{trend}</span><br>
-                                    <small>{abs(proj_total - market['total']):.1f} pts diff</small>
-                                </div>
-                                """, unsafe_allow_html=True)
-                            with c_btn:
-                                if st.button("📝", key=f"t_{game['id']}", help=f"Registrar {trend} {market['total']}"):
-                                    save_bet(f"{away} @ {home}", "Total", f"{trend} {market['total']}", 1.91, val_bet)
-                                    st.toast(f"✅ Registrado: {trend} {market['total']}")
-                        else:
-                            st.markdown("<div style='text-align:right;color:#555'>Sem Valor</div>", unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-        
-        # === RENDERIZAÇÃO PROPS ===
-        with subtab_props:
-            if not props_collection:
-                st.info("🎯 Sem correlações fortes no momento (jogos lentos ou defesas boas)")
-            else:
-                for item in props_collection:
-                    st.markdown(f"**{item['game']}**")
-                    cols = st.columns(min(3, len(item['props'])))
-                    for idx, prop in enumerate(item['props']):
-                        with cols[idx % len(cols)]:
+                        if is_live:
                             st.markdown(f"""
-                            <div class="prop-card prop-good">
-                                <b>🎯 {prop['player']}</b><br>
-                                <span style="color:#00ffaa">{prop['type']}</span><br>
-                                <small style="color:#aaa">{prop['reason']}</small>
+                            <div style='display:flex; flex-direction:column; justify-content:center; height:100%;'>
+                                <div class='score-big'>{s_txt_a}</div>
+                                <div class='score-big'>{s_txt_h}</div>
                             </div>
                             """, unsafe_allow_html=True)
-                    st.divider()
+                    
+                    # Dados & Decisão (Direita)
+                    with c3:
+                        diff = abs(fair - m_spr)
+                        has_val = diff >= 1.5
+                        
+                        st.markdown(f"""
+                        <div style='display:flex; justify-content:space-between; margin-bottom:10px;'>
+                            <div><div class='metric-label'>MODELO</div><div class='metric-value' style='color:#38bdf8'>{fair:+.1f}</div></div>
+                            <div style='text-align:right'><div class='metric-label'>MERCADO</div><div class='metric-value'>{m_spr:+.1f}</div></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        if has_val:
+                            pick = h if fair < m_spr else a
+                            line = m_spr if pick == h else -m_spr
+                            units = 1.5 if diff > 3 else 0.75
+                            val = val_unid * units
+                            
+                            cols_d = st.columns([2, 1])
+                            with cols_d[0]:
+                                st.markdown(f"""<div class='bet-button'>APOSTAR R$ {val:.0f}<br><span style='font-size:0.9rem; font-weight:500'>{pick} {line:+.1f}</span></div>""", unsafe_allow_html=True)
+                            with cols_d[1]:
+                                 if st.button("💾", key=f"s_{h}_{game['id']}", help="Salvar no Histórico"):
+                                     save_bet(f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val)
+                        else:
+                            st.markdown("<div style='text-align:right; margin-top:10px;'><span class='no-value'>Sem Valor Claro</span></div>", unsafe_allow_html=True)
 
-# === TAB BACKOFFICE ===
-with tab_backoffice:
-    st.header("💼 Auditoria de Performance")
-    
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+with tab_adm:
+    st.subheader("📈 Performance")
     df = load_history()
-    
-    if df.empty:
-        st.info("📝 Nenhuma aposta registrada. Use o botão 📝 no Terminal para salvar entradas.")
-    else:
-        # Editor de Resultados
-        st.caption("Defina o resultado (Green/Red/Void) e clique em Salvar para calcular lucro.")
+    if not df.empty:
+        edited = st.data_editor(df, num_rows="dynamic", key="editor", column_config={"Resultado": st.column_config.SelectboxColumn("Status", options=["Pendente","Green","Red"])})
+        if st.button("Atualizar Lucro"):
+            for i, r in edited.iterrows():
+                if r['Resultado'] == 'Green': edited.at[i, 'Lucro'] = r['Valor'] * 0.91
+                elif r['Resultado'] == 'Red': edited.at[i, 'Lucro'] = -r['Valor']
+            edited.to_csv(HISTORY_FILE, index=False); st.rerun()
         
-        edited_df = st.data_editor(
-            df,
-            num_rows="dynamic",
-            column_config={
-                "Resultado": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=["Pendente", "Green", "Red", "Void"],
-                    required=True,
-                    width="small"
-                ),
-                "Valor": st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f"),
-                "Lucro": st.column_config.NumberColumn("Lucro (R$)", format="R$ %.2f"),
-                "Odd": st.column_config.NumberColumn("Odd", format="%.2f", width="small")
-            },
-            key="history_editor",
-            use_container_width=True
-        )
-        
-        col_save, col_export = st.columns([1, 1])
-        with col_save:
-            if st.button("💾 Salvar & Calcular Lucro", type="primary", use_container_width=True):
-                updated = update_results(edited_df)
-                st.success("✅ Resultados atualizados!")
-                st.rerun()
-        
-        with col_export:
-            if st.button("📊 Exportar Excel", use_container_width=True):
-                from core.backoffice import export_to_excel
-                if export_to_excel(df):
-                    st.success("✅ Exportado para bets_export.xlsx")
-        
-        st.divider()
-        
-        # Dashboard de Métricas
-        metrics = calculate_metrics(df)
-        
-        if metrics.completed_bets > 0:
-            k1, k2, k3, k4 = st.columns(4)
-            
-            with k1:
-                delta_color = "normal" if metrics.total_profit >= 0 else "inverse"
-                st.metric(
-                    "Lucro Líquido",
-                    f"R$ {metrics.total_profit:.2f}",
-                    delta=f"R$ {metrics.total_profit:.2f}",
-                    delta_color=delta_color
-                )
-            
-            with k2:
-                st.metric(
-                    "ROI",
-                    f"{metrics.roi:.1f}%",
-                    delta=f"{metrics.roi:+.1f}%",
-                    delta_color="normal" if metrics.roi >= 0 else "inverse"
-                )
-            
-            with k3:
-                st.metric(
-                    "Winrate",
-                    f"{metrics.winrate:.1f}%",
-                    delta=f"{metrics.greens}/{metrics.completed_bets}"
-                )
-            
-            with k4:
-                streak_text = f"+{metrics.current_streak}" if metrics.current_streak > 0 else str(metrics.current_streak)
-                st.metric(
-                    "Streak Atual",
-                    streak_text,
-                    delta="🔥" if metrics.current_streak > 2 else ("❄️" if metrics.current_streak < -2 else "")
-                )
-            
-            # Gráfico de Curva de Lucro
-            df['Acumulado'] = get_cumulative_profit(df)
-            
-            fig = px.area(
-                df,
-                y='Acumulado',
-                title='📈 Curva de Crescimento da Banca',
-                labels={'Acumulado': 'Lucro Acumulado (R$)', 'index': 'Aposta #'}
-            )
-            fig.update_layout(
-                template="plotly_dark",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                showlegend=False,
-                hovermode='x unified'
-            )
-            fig.update_traces(
-                fill='tozeroy',
-                line_color='#00ff88' if metrics.total_profit >= 0 else '#ff4b4b'
-            )
-            
+        # Gráfico Clean
+        if not edited[edited['Resultado']!='Pendente'].empty:
+            edited['Acumulado'] = edited['Lucro'].cumsum()
+            fig = px.area(edited, y='Acumulado', title='Curva de Lucro (R$)', template='plotly_dark')
+            fig.update_traces(line_color='#38bdf8', fill_color='rgba(56, 189, 248, 0.2)')
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⏳ Marque alguns resultados como Green ou Red para ver as métricas.")
-
-# Footer
-st.divider()
-st.caption(f"NBA Terminal Pro v12.0 | Season {CONFIG.nba_season} | 🔐 API Key protegida")
+    else:
+        st.info("Histórico vazio.")

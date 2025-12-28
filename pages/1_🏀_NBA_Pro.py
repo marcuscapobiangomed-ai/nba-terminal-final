@@ -273,7 +273,8 @@ with tab_ops:
                         pick = h if fair < m_spr else a
                         line = m_spr if pick == h else -m_spr
                         units = 1.5 if diff > 3 else 0.75
-                        val = val_unid * units
+                        units = 1.5 if diff > 3 else 0.75
+                        bet_value = val_unid * units
                         
                         html_footer = textwrap.dedent(f"""
                             <div class="card-action">
@@ -285,8 +286,9 @@ with tab_ops:
                         """).strip()
                         st.markdown(html_footer, unsafe_allow_html=True)
                         
-                        if st.button(f"📥 REGISTRAR (R$ {val:.0f})", key=f"b_{h}", type="secondary", use_container_width=True):
-                             save_bet(f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val)
+                        if st.button(f"📥 REGISTRAR (R$ {bet_value:.2f})", key=f"b_{h}", type="secondary", use_container_width=True):
+                             st.toast(f"💰 Apostando: R$ {bet_value:.2f} ({units}u)")
+                             save_bet(f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, bet_value)
                     else:
                          st.markdown("""<div style="padding:15px; text-align:center; color:#475569; font-size:0.8rem; font-style:italic;">Sem oportunidade de valor</div>""", unsafe_allow_html=True)
                     

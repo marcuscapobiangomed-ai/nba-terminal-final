@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import feedparser
 import os
+import textwrap # <--- A SOLUÇÃO MÁGICA
 import plotly.express as px
 from datetime import datetime
 from deep_translator import GoogleTranslator
@@ -17,52 +18,30 @@ HISTORY_FILE = "bets_history.csv"
 if 'banca' not in st.session_state: st.session_state.banca = 1000.0
 if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0
 
-# --- 2. CSS "GLASS-NEON" PREMIUM ---
+# --- 2. CSS "GLASS-NEON" ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Roboto+Mono:wght@500;700&display=swap');
     
-    /* FUNDO GERAL */
-    .stApp { 
-        background: radial-gradient(circle at top left, #1e293b, #0f172a);
-        font-family: 'Inter', sans-serif;
-    }
+    .stApp { background: radial-gradient(circle at top left, #1e293b, #0f172a); font-family: 'Inter', sans-serif; }
+    [data-testid="stSidebar"] { background-color: #0b1120; border-right: 1px solid #1e293b; }
     
-    /* SIDEBAR */
-    [data-testid="stSidebar"] {
-        background-color: #0b1120;
-        border-right: 1px solid #1e293b;
-    }
-    
-    /* CARD PRINCIPAL */
     .game-card {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 16px;
-        margin-bottom: 24px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
-        overflow: hidden;
+        background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 16px;
+        margin-bottom: 24px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2); overflow: hidden;
     }
+    .card-live { border-left: 4px solid #ef4444; }
     
-    .card-live {
-        border-left: 4px solid #ef4444;
-    }
-    
-    /* HEADER */
     .card-header {
-        padding: 20px 24px;
-        background: rgba(15, 23, 42, 0.4);
+        padding: 20px 24px; background: rgba(15, 23, 42, 0.4);
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        display: flex; justify-content: space-between; align-items: center;
     }
     
     .status-badge {
-        font-family: 'Roboto Mono', monospace;
-        font-size: 0.7rem; font-weight: 700; color: #94a3b8;
-        background: #1e293b; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;
+        font-family: 'Roboto Mono', monospace; font-size: 0.7rem; font-weight: 700;
+        color: #94a3b8; background: #1e293b; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;
     }
     .live-badge { color: #fca5a5; border-color: #7f1d1d; background: #450a0a; }
 
@@ -70,36 +49,21 @@ st.markdown("""
     .team-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
     .team-score { font-family: 'Roboto Mono', monospace; font-size: 1.4rem; font-weight: 700; color: #fff; }
 
-    /* BODY */
-    .card-body {
-        padding: 20px 24px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 20px;
-    }
-    
-    .metric-col {
-        background: rgba(255,255,255,0.03);
-        border-radius: 10px; padding: 10px; text-align: center;
-    }
+    .card-body { padding: 20px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .metric-col { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 10px; text-align: center; }
     .metric-lbl { font-size: 0.65rem; color: #64748b; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
     .metric-val { font-size: 1.1rem; color: #e2e8f0; font-weight: 700; font-family: 'Roboto Mono'; }
     .val-highlight { color: #38bdf8; }
 
-    /* ACTION */
     .card-action {
-        padding: 16px 24px;
-        background: rgba(34, 197, 94, 0.05);
-        border-top: 1px solid rgba(34, 197, 94, 0.1);
-        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 24px; background: rgba(34, 197, 94, 0.05);
+        border-top: 1px solid rgba(34, 197, 94, 0.1); display: flex; justify-content: space-between; align-items: center;
     }
     .value-tag { color: #4ade80; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
     .bet-info { font-size: 1rem; color: #fff; font-weight: 800; }
 
-    /* UTILS */
     .news-item { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
     .bankroll-card { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; text-align: center; }
-
     </style>
 """, unsafe_allow_html=True)
 
@@ -113,7 +77,7 @@ def save_bet(jogo, tipo, aposta, odd, valor):
     new_row = pd.DataFrame([{"Data": datetime.now().strftime("%Y-%m-%d %H:%M"), "Jogo": jogo, "Tipo": tipo, "Aposta": aposta, "Odd": odd, "Valor": valor, "Resultado": "Pendente", "Lucro": 0.0}])
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(HISTORY_FILE, index=False)
-    st.toast(f"✅ Registrado na Carteira: {aposta}")
+    st.toast(f"✅ Registrado: {aposta}")
 
 @st.cache_data(ttl=86400)
 def get_advanced_team_stats():
@@ -162,20 +126,13 @@ def get_news():
 # --- 4. INTERFACE ---
 st.title("🏆 NBA Terminal Pro")
 
-# Sidebar
 with st.sidebar:
     st.markdown("### 💰 Gestão de Banca")
     st.session_state.banca = st.number_input("Banca Total (R$)", value=st.session_state.banca, step=100.0)
     st.session_state.unidade_pct = st.slider("Unidade (%)", 0.5, 5.0, st.session_state.unidade_pct, step=0.5)
     val_unid = st.session_state.banca * (st.session_state.unidade_pct / 100)
-    
     st.markdown("---")
-    st.markdown(f"""
-    <div class='bankroll-card'>
-        <div style='color:#64748b; font-size:0.75rem; font-weight:700; margin-bottom:5px; letter-spacing:0.05em;'>VALOR 1 UNIDADE</div>
-        <div style='color:#38bdf8; font-size:1.6rem; font-weight:800;'>R$ {val_unid:.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='bankroll-card'><div style='color:#64748b;font-size:0.75rem;font-weight:700'>VALOR 1 UNIDADE</div><div style='color:#38bdf8;font-size:1.6rem;font-weight:800'>R$ {val_unid:.2f}</div></div>", unsafe_allow_html=True)
 
 tab_ops, tab_adm = st.tabs(["⚡ MERCADO AO VIVO", "📊 MINHA CARTEIRA"])
 
@@ -184,7 +141,6 @@ with tab_ops:
     with c_scan:
         if st.button("🔄 ATUALIZAR ODDS", type="primary", use_container_width=True):
             st.cache_data.clear(); st.rerun()
-    
     with c_news:
         news = get_news()
         if news and st.toggle("Mostrar Notícias", False):
@@ -193,28 +149,30 @@ with tab_ops:
     
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
     
-    # DADOS
     STATS = get_advanced_team_stats()
     ODDS = get_odds(API_KEY)
     LIVE = get_live_scores()
     
     if not ODDS or isinstance(ODDS, dict):
-        st.info("Mercado Fechado ou Sem Jogos no momento.")
+        st.info("Mercado Fechado ou Sem Jogos.")
     else:
-        # GRID LAYOUT (2 Colunas para telas grandes)
-        col_grid_1, col_grid_2 = st.columns(2)
-        
+        col_1, col_2 = st.columns(2)
         for idx, game in enumerate(ODDS):
             h, a = game['home_team'], game['away_team']
-            
-            # Coloca metade dos jogos na esquerda, metade na direita
-            current_col = col_grid_1 if idx % 2 == 0 else col_grid_2
+            curr_col = col_1 if idx % 2 == 0 else col_2
             
             linfo = None
             for k, v in LIVE.items():
                 if k in h or h in k: linfo = v; break
             is_live = linfo['live'] if linfo else False
             
+            if is_live:
+                badge_html = f"<span class='status-badge live-badge'>🔴 Q{linfo['period']} {linfo['clock']}</span>"
+                s_a_txt = linfo['s_away']; s_h_txt = linfo['s_home']; css_live = "card-live"
+            else:
+                badge_html = f"<span class='status-badge'>{pd.to_datetime(game['commence_time']).strftime('%H:%M')}</span>"
+                s_a_txt = "-"; s_h_txt = "-"; css_live = ""
+
             s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
             s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
             fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
@@ -225,49 +183,35 @@ with tab_ops:
                 m_spr = -p if s['markets'][0]['outcomes'][0]['name'] != h else p; break
             if m_spr == 0.0: continue
             
-            # VARIÁVEIS DE VISUALIZAÇÃO
-            if is_live:
-                badge_html = f"<span class='status-badge live-badge'>🔴 Q{linfo['period']} {linfo['clock']}</span>"
-                s_a_txt = linfo['s_away']
-                s_h_txt = linfo['s_home']
-                css_live = "card-live"
-            else:
-                badge_html = f"<span class='status-badge'>{pd.to_datetime(game['commence_time']).strftime('%H:%M')}</span>"
-                s_a_txt = "-"
-                s_h_txt = "-"
-                css_live = ""
-
             diff = abs(fair - m_spr)
             has_val = diff >= 1.5
             
-            # --- CARD RENDER ---
-            with current_col:
+            # --- CORREÇÃO FINAL: TEXTWRAP.DEDENT ---
+            # Remove qualquer indentação acidental antes de renderizar
+            html_card = textwrap.dedent(f"""
+                <div class="game-card {css_live}">
+                    <div class="card-header">
+                        <div>{badge_html}</div>
+                        <div style="text-align:right">
+                            <div class="team-row"><span class="team-name">{a}</span> <span class="team-score">{s_a_txt}</span></div>
+                            <div class="team-row"><span class="team-name">{h}</span> <span class="team-score">{s_h_txt}</span></div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-col">
+                            <div class="metric-lbl">MODELO</div>
+                            <div class="metric-val val-highlight">{fair:+.1f}</div>
+                        </div>
+                        <div class="metric-col">
+                            <div class="metric-lbl">MERCADO</div>
+                            <div class="metric-val">{m_spr:+.1f}</div>
+                        </div>
+                    </div>
+            """).strip()
+            
+            with curr_col:
                 with st.container():
-                    st.markdown(f"""
-                    <div class="game-card {css_live}">
-                        <div class="card-header">
-                            <div>{badge_html}</div>
-                            <div style="text-align:right">
-                                <div class="team-row">
-                                    <span class="team-name">{a}</span> <span class="team-score">{s_a_txt}</span>
-                                </div>
-                                <div class="team-row">
-                                    <span class="team-name">{h}</span> <span class="team-score">{s_h_txt}</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="card-body">
-                            <div class="metric-col">
-                                <div class="metric-lbl">MODELO</div>
-                                <div class="metric-val val-highlight">{fair:+.1f}</div>
-                            </div>
-                            <div class="metric-col">
-                                <div class="metric-lbl">MERCADO</div>
-                                <div class="metric-val">{m_spr:+.1f}</div>
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(html_card, unsafe_allow_html=True)
                     
                     if has_val:
                         pick = h if fair < m_spr else a
@@ -275,19 +219,18 @@ with tab_ops:
                         units = 1.5 if diff > 3 else 0.75
                         val = val_unid * units
                         
-                        st.markdown(f"""
-                        <div class="card-action">
-                            <div>
-                                <div class="value-tag">✨ VALOR ENCONTRADO</div>
-                                <div class="bet-info">{pick} {line:+.1f}</div>
+                        html_footer = textwrap.dedent(f"""
+                            <div class="card-action">
+                                <div>
+                                    <div class="value-tag">✨ VALOR ENCONTRADO</div>
+                                    <div class="bet-info">{pick} {line:+.1f}</div>
+                                </div>
                             </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        """).strip()
+                        st.markdown(html_footer, unsafe_allow_html=True)
                         
-                        # Botão Nativo para Salvar
-                        if st.button(f"📥 REGISTRAR APOSTA (R$ {val:.0f})", key=f"b_{h}", type="secondary", use_container_width=True):
+                        if st.button(f"📥 REGISTRAR (R$ {val:.0f})", key=f"b_{h}", type="secondary", use_container_width=True):
                              save_bet(f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val)
-                    
                     else:
                          st.markdown("""<div style="padding:15px; text-align:center; color:#475569; font-size:0.8rem; font-style:italic;">Sem oportunidade de valor</div>""", unsafe_allow_html=True)
                     
@@ -297,40 +240,29 @@ with tab_adm:
     st.subheader("📈 Performance da Carteira")
     df = load_history()
     if not df.empty:
-        # Editor
         edited = st.data_editor(
-            df, 
-            num_rows="dynamic", 
-            key="editor", 
-            column_config={
-                "Resultado": st.column_config.SelectboxColumn("Status", options=["Pendente","Green","Red"]),
-                "Lucro": st.column_config.NumberColumn("Lucro (R$)", format="%.2f")
-            },
+            df, num_rows="dynamic", key="editor",
+            column_config={"Resultado": st.column_config.SelectboxColumn("Status", options=["Pendente","Green","Red"]), "Lucro": st.column_config.NumberColumn("Lucro (R$)", format="%.2f")},
             hide_index=True
         )
-        
-        c_upd, c_del = st.columns([1,4])
-        if c_upd.button("💾 Salvar Alterações"):
+        if st.button("💾 Salvar Alterações"):
             for i, r in edited.iterrows():
                 if r['Resultado'] == 'Green': edited.at[i, 'Lucro'] = r['Valor'] * 0.91
                 elif r['Resultado'] == 'Red': edited.at[i, 'Lucro'] = -r['Valor']
             edited.to_csv(HISTORY_FILE, index=False); st.rerun()
             
-        # Gráfico
         finalizadas = edited[edited['Resultado']!='Pendente']
         if not finalizadas.empty:
             edited['Acumulado'] = edited['Lucro'].cumsum()
-            
             fig = px.area(edited, x=edited.index, y='Acumulado', title='Crescimento da Banca (R$)', template='plotly_dark')
             fig.update_traces(line_color='#38bdf8', fill_color='rgba(56, 189, 248, 0.1)')
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
             
-            # KPIs
             roi = (finalizadas['Lucro'].sum() / finalizadas['Valor'].sum()) * 100
             k1, k2, k3 = st.columns(3)
-            k1.metric("Lucro Líquido", f"R$ {finalizadas['Lucro'].sum():.2f}")
-            k2.metric("ROI Total", f"{roi:.1f}%")
-            k3.metric("Apostas Fechadas", len(finalizadas))
+            k1.metric("Lucro Liq.", f"R$ {finalizadas['Lucro'].sum():.2f}")
+            k2.metric("ROI", f"{roi:.1f}%")
+            k3.metric("Fechadas", len(finalizadas))
     else:
         st.info("Nenhuma aposta registrada ainda.")

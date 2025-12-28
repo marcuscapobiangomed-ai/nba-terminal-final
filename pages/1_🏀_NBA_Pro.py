@@ -262,36 +262,37 @@ else:
                     """
                 
                 # Renderiza HTML Único
+                # Renderiza HTML Único (Sem indentação para evitar Code Block do Markdown)
                 st.markdown(f"""
-                <div class="{css_class}">
-                    <div class="card-header">
-                        <span class="{status_class}">{clock}</span>
-                        <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
-                    </div>
-                    
-                    <div class="team-row">
-                        <span class="team-name">{a}</span>
-                        <span class="team-score">{score_a}</span>
-                    </div>
-                    <div class="team-row">
-                        <span class="team-name">{h}</span>
-                        <span class="team-score">{score_h}</span>
-                    </div>
-                    
-                    <div class="data-grid">
-                        <div class="metric-col">
-                            <div class="metric-lbl">MODELO</div>
-                            <div class="metric-val">{fair:+.1f}</div>
-                        </div>
-                        <div class="metric-col">
-                            <div class="metric-lbl">MERCADO</div>
-                            <div class="metric-val">{m_spr:+.1f}</div>
-                        </div>
-                    </div>
-                    
-                    {bet_html}
-                </div>
-                """, unsafe_allow_html=True)
+<div class="{css_class}">
+    <div class="card-header">
+        <span class="{status_class}">{clock}</span>
+        <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
+    </div>
+    
+    <div class="team-row">
+        <span class="team-name">{a}</span>
+        <span class="team-score">{score_a}</span>
+    </div>
+    <div class="team-row">
+        <span class="team-name">{h}</span>
+        <span class="team-score">{score_h}</span>
+    </div>
+    
+    <div class="data-grid">
+        <div class="metric-col">
+            <div class="metric-lbl">MODELO</div>
+            <div class="metric-val">{fair:+.1f}</div>
+        </div>
+        <div class="metric-col">
+            <div class="metric-lbl">MERCADO</div>
+            <div class="metric-val">{m_spr:+.1f}</div>
+        </div>
+    </div>
+    
+    {bet_html}
+</div>
+""", unsafe_allow_html=True)
                 
                 # Botão Save (invisible mas funcional via Streamlit native elements fora do HTML custom)
                 if edge >= CONFIG.min_edge_spread:

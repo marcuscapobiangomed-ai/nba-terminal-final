@@ -1,27 +1,24 @@
+import sys
+import os
+from pathlib import Path
+
+# --- FIX DE IMPORTAÇÃO (STREAMLIT CLOUD) ---
+# Adiciona o diretório raiz (../) ao sys.path para garantir que 'core' seja encontrado
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    root_path = os.path.dirname(current_dir)
+    if root_path not in sys.path:
+        sys.path.append(root_path)
+    # Fallback: Adiciona também o diretório atual e '..' relativo
+    sys.path.append(os.path.join(current_dir, '..'))
+except Exception as e:
+    print(f"Erro no Path Fix: {e}")
 
 import streamlit as st
 import pandas as pd
 import requests
 import feedparser
-import os
-import textwrap # <--- A SOLUÇÃO MÁGICA
-import sys
-import os
-
-# Adiciona diretório raiz ao path para importar 'core' corretamente
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_path = os.path.dirname(current_dir) # Sobe um nível (de pages/ para raiz)
-
-if root_path not in sys.path:
-    sys.path.append(root_path)
-
-# DEBUG: Verificar se o sistema de arquivos está montado corretamente
-print(f"📂 Root Path: {root_path}")
-try:
-    print(f"📂 Conteúdo Root: {os.listdir(root_path)}")
-    print(f"📂 Conteúdo Core: {os.listdir(os.path.join(root_path, 'core'))}")
-except Exception as e:
-    print(f"⚠️ Erro ao listar diretórios: {e}")
+import textwrap 
 
 from core.player_props import PlayerPropsEngine
 from core.star_impact import get_team_stars

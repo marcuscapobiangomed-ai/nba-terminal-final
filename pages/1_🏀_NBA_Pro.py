@@ -11,6 +11,7 @@ from deep_translator import GoogleTranslator
 from nba_api.stats.endpoints import leaguedashteamstats
 from pathlib import Path
 from core.player_props import PlayerPropsEngine
+from core.star_impact import get_team_stars
 
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
@@ -229,9 +230,51 @@ with tab_ops:
                 badge_html = f"<span class='status-badge'>{pd.to_datetime(game['commence_time']).strftime('%H:%M')}</span>"
                 s_a_txt = "-"; s_h_txt = "-"; css_live = ""
 
+            # Mapping simplificado para testar (Ideal: Usar dados da NBA API)
+            team_map = {
+                "Boston Celtics": "BOS", "Denver Nuggets": "DEN", "Milwaukee Bucks": "MIL",
+                "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHX", "Los Angeles Lakers": "LAL",
+                "Golden State Warriors": "GSW", "Dallas Mavericks": "DAL", "Oklahoma City Thunder": "OKC",
+                "Minnesota Timberwolves": "MIN", "New York Knicks": "NYK", "Miami Heat": "MIA",
+                "Los Angeles Clippers": "LAC", "Atlanta Hawks": "ATL", "Houston Rockets": "HOU"
+            }
+            
+            # --- LESÕES E AJUSTES ---
+            h_abbr, a_abbr = team_map.get(h, "UNK"), team_map.get(a, "UNK")
+            h_stars, a_stars = get_team_stars(h_abbr), get_team_stars(a_abbr)
+            
+            penalty_h, penalty_a = 0.0, 0.0
+            
+            # Expander para Lesões (Só mostra se tiver estrelas mapeadas)
+            if h_stars or a_stars:
+                with st.expander(f"🚑 Ajuste de Desfalques ({a_abbr} @ {h_abbr})"):
+                    c_inj_a, c_inj_h = st.columns(2)
+                    
+                    with c_inj_a:
+                        if a_stars:
+                            st.caption(f"Desfalques {a}")
+                            for star, imp in a_stars.items():
+                                if st.checkbox(f"{star} (-{imp})", key=f"inj_{idx}_{star}"):
+                                    penalty_a += imp
+                                    
+                    with c_inj_h:
+                        if h_stars:
+                            st.caption(f"Desfalques {h}")
+                            for star, imp in h_stars.items():
+                                if st.checkbox(f"{star} (-{imp})", key=f"inj_{idx}_{star}"):
+                                    penalty_h += imp
+
             s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
             s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
-            fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
+            
+            # CÁLCULO DINÂMICO
+            # NetRtg Ajustado = NetRtg Base - Penalidade por Lesão
+            rtg_h_adj = s_h['net_rtg'] - penalty_h
+            rtg_a_adj = s_a['net_rtg'] - penalty_a
+            
+            # Fair Line: (Home_Adj + 2.5 HomeAdv) - Away_Adj
+            # Negativo = Home Fav (ex: -5.0)
+            fair = -((rtg_h_adj + 2.5) - rtg_a_adj)
             
             m_spr = 0.0
             for s in game.get('bookmakers', []):
@@ -255,7 +298,7 @@ with tab_ops:
                     </div>
                     <div class="card-body">
                         <div class="metric-col">
-                            <div class="metric-lbl">MODELO</div>
+                            <div class="metric-lbl">MODELO (AJUSTADO)</div>
                             <div class="metric-val val-highlight">{fair:+.1f}</div>
                         </div>
                         <div class="metric-col">

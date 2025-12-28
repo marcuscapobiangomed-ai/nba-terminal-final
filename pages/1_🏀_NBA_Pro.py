@@ -9,11 +9,13 @@ import plotly.express as px
 from datetime import datetime
 from deep_translator import GoogleTranslator
 from nba_api.stats.endpoints import leaguedashteamstats
+from pathlib import Path
 
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
 API_KEY = "e6a32983f406a1fbf89fda109149ac15"
-HISTORY_FILE = "bets_history.csv"
+# Define caminho absoluto para o arquivo na raiz do projeto
+HISTORY_FILE = Path(__file__).parent.parent / "bets_history.csv"
 
 if 'banca' not in st.session_state: st.session_state.banca = 1000.0
 if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0

@@ -23,106 +23,116 @@ HISTORY_FILE = "bets_history.csv"
 if 'banca' not in st.session_state: st.session_state.banca = 1000.0
 if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0
 
-# --- 2. CSS PREMIUM (DESIGN OVERHAUL) ---
+# --- 2. CSS PREMIUM (DESIGN OVERHAUL - V13.1) ---
 st.markdown("""
     <style>
-    /* Importando Fontes Modernas */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    /* Importando Fontes */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
     
-    /* RESET GLOBAL */
+    /* Configuração Global */
     .stApp { 
-        background-color: #0f172a; /* Slate 900 - Fundo Azulado Profundo */
+        background-color: #0b0f19; /* Obsidian Dark */
+        color: #ffffff;
         font-family: 'Inter', sans-serif;
     }
     
-    /* CARD DESIGN (Glassmorphism Sutil) */
-    .game-card { 
-        background-color: #1e293b; /* Slate 800 */
-        border: 1px solid #334155; /* Slate 700 */
-        border-radius: 12px; 
-        padding: 20px; 
-        margin-bottom: 16px; 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-        transition: transform 0.2s;
+    /* SIDEBAR FORÇADA DARK */
+    [data-testid="stSidebar"] {
+        background-color: #111827; /* Gray 900 */
+        border-right: 1px solid #1f2937;
     }
-    .game-card:hover { border-color: #475569; }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+        color: #e5e7eb !important;
+    }
+    
+    /* CARD DESIGN PRO */
+    .game-card { 
+        background-color: #161e2e; /* Gray 850 */
+        border: 1px solid #374151; /* Gray 700 */
+        border-radius: 8px; 
+        padding: 16px; 
+        margin-bottom: 12px; 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    }
     
     .card-live { 
-        background: linear-gradient(145deg, #1e293b 0%, #2a1b1b 100%);
-        border-left: 5px solid #ef4444; 
+        border-left: 4px solid #ef4444; 
+        background: linear-gradient(90deg, #161e2e 0%, #1f1212 100%);
     }
     
-    /* TIPOGRAFIA HIERÁRQUICA */
+    /* HEADER DO CARD */
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #374151;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+    }
+    
+    .status-live { color: #ef4444; font-weight: 800; letter-spacing: 0.05em; font-size: 0.8rem; }
+    .status-pre { color: #9ca3af; font-weight: 600; font-size: 0.8rem; }
+    
+    /* PLACAR E TIMES */
+    .team-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    
     .team-name { 
-        font-size: 1.25rem; /* 20px */
+        font-size: 1.1rem; 
         font-weight: 700; 
-        color: #f8fafc; /* Slate 50 */
-        margin-bottom: 4px;
-        line-height: 1.2;
+        color: #f3f4f6; 
     }
     
-    .score-big { 
-        font-size: 2rem; /* 32px */
+    .team-score { 
+        font-size: 1.3rem; 
         font-weight: 800; 
-        color: #ffffff;
-        letter-spacing: -1px;
-    }
-    
-    .metric-label { 
-        font-size: 0.85rem; /* 13.6px - Bem maior que antes */
-        font-weight: 600;
-        color: #94a3b8; /* Slate 400 */
-        text-transform: uppercase; 
-        letter-spacing: 0.05em;
-        margin-bottom: 2px;
-    }
-    
-    .metric-value { 
-        font-size: 1.4rem; /* 22px */
-        font-weight: 700; 
-        color: #e2e8f0; 
-    }
-    
-    .status-badge {
-        font-size: 0.8rem;
-        font-weight: 700;
-        color: #cbd5e1;
-        background-color: #334155;
-        padding: 4px 10px;
-        border-radius: 99px;
-        display: inline-block;
-        margin-bottom: 8px;
-    }
-
-    /* BOTÕES DE AÇÃO */
-    .bet-button {
-        background-color: #22c55e; /* Green 500 */
-        color: #022c22;
-        font-weight: 800;
-        padding: 8px 16px;
-        border-radius: 8px;
+        color: #ffffff; 
+        background: #1f2937;
+        padding: 2px 10px;
+        border-radius: 4px;
+        min-width: 40px;
         text-align: center;
-        box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
-        border: 1px solid #4ade80;
     }
     
-    .no-value {
-        color: #64748b;
-        font-size: 0.9rem;
-        font-style: italic;
+    /* DATA GRID */
+    .data-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #374151;
     }
     
-    /* NOTÍCIAS */
-    .news-card { background-color: #1e293b; padding: 12px; border-radius: 8px; border-left: 4px solid #3b82f6; margin-bottom: 8px; }
-    .news-title { font-size: 1rem; color: #e2e8f0; line-height: 1.4; }
-    .news-time { font-size: 0.8rem; color: #94a3b8; font-weight: bold; margin-bottom: 4px; }
+    .metric-col { text-align: center; }
+    .metric-lbl { color: #9ca3af; font-size: 0.7rem; font-weight: 700; margin-bottom: 2px; }
+    .metric-val { color: #e5e7eb; font-size: 1.1rem; font-weight: 700; }
+    .val-good { color: #34d399; } /* Green 400 */
+    .val-bad { color: #f87171; } /* Red 400 */
     
-    /* AJUSTES STREAMLIT */
-    div[data-testid="stExpander"] { background-color: #1e293b; border-radius: 8px; border: 1px solid #334155; }
+    /* BOTÃO APOSTA */
+    .bet-box {
+        background: #064e3b; /* Emerald 900 */
+        border: 1px solid #059669; /* Emerald 600 */
+        border-radius: 6px;
+        padding: 8px;
+        text-align: center;
+        margin-top: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .bet-box:hover { background: #065f46; transform: translateY(-1px); }
+    .bet-title { color: #34d399; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
+    .bet-pick { color: #ffffff; font-size: 1.1rem; font-weight: 800; }
+
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. FUNÇÕES (MANTIDAS IGUAIS) ---
+# --- 3. FUNÇÕES (MANTIDAS) ---
 def load_history():
     if not os.path.exists(HISTORY_FILE): return pd.DataFrame(columns=["Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
     return pd.read_csv(HISTORY_FILE)
@@ -132,7 +142,7 @@ def save_bet(jogo, tipo, aposta, odd, valor):
     new_row = pd.DataFrame([{"Data": datetime.now().strftime("%Y-%m-%d %H:%M"), "Jogo": jogo, "Tipo": tipo, "Aposta": aposta, "Odd": odd, "Valor": valor, "Resultado": "Pendente", "Lucro": 0.0}])
     df = pd.concat([df, new_row], ignore_index=True)
     df.to_csv(HISTORY_FILE, index=False)
-    st.toast(f"✅ Aposta Registrada: {aposta}")
+    st.toast(f"✅ Registrado: {aposta}")
 
 @st.cache_data(ttl=86400)
 def get_advanced_team_stats():
@@ -181,135 +191,120 @@ def get_news():
 # --- 4. INTERFACE PRINCIPAL ---
 st.title("🏆 NBA Terminal Pro")
 
-# Sidebar Limpa
+# Sidebar
 with st.sidebar:
-    st.header("💰 Gestão")
-    st.session_state.banca = st.number_input("Banca Total (R$)", value=st.session_state.banca, step=100.0)
+    st.markdown("### 💰 Bankroll")
+    st.session_state.banca = st.number_input("Total (R$)", value=st.session_state.banca, step=100.0)
     st.session_state.unidade_pct = st.slider("Unidade (%)", 0.5, 5.0, st.session_state.unidade_pct, step=0.5)
     val_unid = st.session_state.banca * (st.session_state.unidade_pct / 100)
-    st.markdown(f"""
-    <div style="background:#1e293b; padding:15px; border-radius:10px; border:1px solid #334155; text-align:center;">
-        <div style="color:#94a3b8; font-size:0.8rem; font-weight:600; margin-bottom:5px;">VALOR DA UNIDADE</div>
-        <div style="color:#38bdf8; font-size:1.8rem; font-weight:800;">R$ {val_unid:.2f}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"**Unidade:** R$ {val_unid:.2f}")
+    st.divider()
+    st.caption("v13.1 Stable • Slate Theme")
 
-# Tabs
-tab_ops, tab_adm = st.tabs(["⚡ OPERAÇÕES", "📊 RESULTADOS"])
+# Scan Button
+if st.button("🔄 SCAN LIVE MARKET", type="primary", use_container_width=True):
+    st.cache_data.clear(); st.rerun()
 
-with tab_ops:
-    c_btn, c_news = st.columns([1, 4])
-    if c_btn.button("🔄 SCAN LIVE", type="primary", use_container_width=True):
-        st.cache_data.clear(); st.rerun()
-        
-    news = get_news()
-    if news:
-        with st.expander("📰 MANCHETES", expanded=False):
-            cols = st.columns(3)
-            for i, n in enumerate(news):
-                with cols[i]: st.markdown(f"<div class='news-card'><div class='news-time'>{n['hora']}</div><div class='news-title'>{n['titulo']}</div></div>", unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # DADOS
-    STATS = get_advanced_team_stats()
-    ODDS = get_odds(API_KEY)
-    LIVE = get_live_scores()
-    
-    if not ODDS or isinstance(ODDS, dict) and 'message' in ODDS:
-        st.info("Mercado Fechado ou Sem Jogos (API Limit ou Offseason).")
-        # Fallback para debug se a API falhar
-        # st.write(ODDS) 
+# DADOS
+STATS = get_advanced_team_stats()
+ODDS = get_odds(API_KEY)
+LIVE = get_live_scores()
+
+if not ODDS or isinstance(ODDS, dict) and 'message' in ODDS:
+    st.info("Mercado Fechado ou Offseason.")
+else:
+    # GRID DE JOGOS (2 JOGOS POR LINHA PARA "ENQUADRAMENTO")
+    if not ODDS:
+        st.info("Nenhum jogo encontrado.")
     else:
-        # Se ODDS for uma lista vazia ou válida
-        if not ODDS:
-             st.info("Nenhum jogo encontrado para hoje.")
-        else:
-            for game in ODDS:
-                h, a = game['home_team'], game['away_team']
-                
-                # Info Live
-                linfo = None
-                for k, v in LIVE.items():
-                    if k in h or h in k: linfo = v; break
-                is_live = linfo['live'] if linfo else False
-                
-                # Modelagem
-                s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
-                s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
-                fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
-                
-                # Market
-                m_spr = 0.0
-                try:
-                    for s in game.get('bookmakers', []):
-                        for m in s.get('markets', []):
-                            if m['key'] == 'spreads':
-                                for o in m['outcomes']:
-                                    if o['name'] == h: p = o['point']; m_spr = p; break
-                                    elif o['name'] == a: p = o['point']; m_spr = -p; break # Se away é favorito (-), spread home é (+). Logica simplificada aqui.
-                                break # Achou spread
-                        if m_spr != 0.0: break
-                except:
-                    pass
-                
-                if m_spr == 0.0: continue
-                
-                # Layout do Card
-                css_card = "game-card card-live" if is_live else "game-card"
-                
-                with st.container():
-                    st.markdown(f"""<div class="{css_card}">""", unsafe_allow_html=True)
+        # Divide em chunks de 2 jogos para criar linhas
+        games_list = list(ODDS)
+        rows = [games_list[i:i + 2] for i in range(0, len(games_list), 2)]
+        
+        for row in rows:
+            cols = st.columns(2) # 2 Colunas para melhor uso de tela
+            for idx, game in enumerate(row):
+                with cols[idx]:
+                    h, a = game['home_team'], game['away_team']
                     
-                    # Header: Status e Times
-                    c1, c2, c3 = st.columns([3.5, 2, 2.5])
+                    # Live Info
+                    linfo = None
+                    for k, v in LIVE.items():
+                        if k in h or h in k: linfo = v; break
+                    is_live = linfo['live'] if linfo else False
                     
-                    status_txt = f"🔴 Q{linfo['period']} • {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
-                    s_txt_a = linfo['s_away'] if is_live and linfo else ""
-                    s_txt_h = linfo['s_home'] if is_live and linfo else ""
+                    # Model
+                    s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
+                    s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
+                    fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
                     
-                    with c1:
-                        st.markdown(f"<span class='status-badge'>{status_txt}</span>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='team-name'>{a}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div class='team-name'>{h}</div>", unsafe_allow_html=True)
+                    # Market Spread
+                    m_spr = 0.0
+                    try:
+                        for s in game.get('bookmakers', []):
+                             for m in s.get('markets', []):
+                                if m['key'] == 'spreads':
+                                    m_spr = m['outcomes'][0]['point'] if m['outcomes'][0]['name'] == h else -m['outcomes'][0]['point']
+                                    break
+                    except: pass
+                    if m_spr == 0.0: continue
                     
-                    # Scores (Coluna do Meio)
-                    with c2:
-                        if is_live:
-                            st.markdown(f"""
-                            <div style='display:flex; flex-direction:column; justify-content:center; height:100%;'>
-                                <div class='score-big'>{s_txt_a}</div>
-                                <div class='score-big'>{s_txt_h}</div>
+                    # Render Card
+                    css_class = "game-card card-live" if is_live else "game-card"
+                    clock = f"Q{linfo['period']} {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
+                    status_class = "status-live" if is_live else "status-pre"
+                    
+                    score_a = linfo['s_away'] if is_live and linfo else "-"
+                    score_h = linfo['s_home'] if is_live and linfo else "-"
+                    
+                    st.markdown(f"""
+                    <div class="{css_class}">
+                        <div class="card-header">
+                            <span class="{status_class}">{clock}</span>
+                            <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
+                        </div>
+                        
+                        <div class="team-row">
+                            <span class="team-name">{a}</span>
+                            <span class="team-score">{score_a}</span>
+                        </div>
+                        <div class="team-row">
+                            <span class="team-name">{h}</span>
+                            <span class="team-score">{score_h}</span>
+                        </div>
+                        
+                        <div class="data-grid">
+                            <div class="metric-col">
+                                <div class="metric-lbl">MODELO</div>
+                                <div class="metric-val">{fair:+.1f}</div>
                             </div>
-                            """, unsafe_allow_html=True)
+                            <div class="metric-col">
+                                <div class="metric-lbl">MERCADO</div>
+                                <div class="metric-val">{m_spr:+.1f}</div>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
                     
-                    # Dados & Decisão (Direita)
-                    with c3:
-                        diff = abs(fair - m_spr)
-                        has_val = diff >= 1.5
+                    diff = abs(fair - m_spr)
+                    if diff >= 1.5:
+                        pick = h if fair < m_spr else a
+                        line = m_spr if pick == h else -m_spr
+                        val = val_unid * (1.5 if diff > 3 else 0.75)
                         
                         st.markdown(f"""
-                        <div style='display:flex; justify-content:space-between; margin-bottom:10px;'>
-                            <div><div class='metric-label'>MODELO</div><div class='metric-value' style='color:#38bdf8'>{fair:+.1f}</div></div>
-                            <div style='text-align:right'><div class='metric-label'>MERCADO</div><div class='metric-value'>{m_spr:+.1f}</div></div>
+                        <div class="bet-box">
+                            <div class="bet-title">VALOR ENCONTRADO</div>
+                            <div class="bet-pick">{pick} {line:+.1f}</div>
+                            <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val:.0f}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                        
-                        if has_val:
-                            pick = h if fair < m_spr else a
-                            line = m_spr if pick == h else -m_spr
-                            units = 1.5 if diff > 3 else 0.75
-                            val = val_unid * units
-                            
-                            cols_d = st.columns([2, 1])
-                            with cols_d[0]:
-                                st.markdown(f"""<div class='bet-button'>APOSTAR R$ {val:.0f}<br><span style='font-size:0.9rem; font-weight:500'>{pick} {line:+.1f}</span></div>""", unsafe_allow_html=True)
-                            with cols_d[1]:
-                                 if st.button("💾", key=f"s_{h}_{game['id']}", help="Salvar no Histórico"):
-                                     save_bet(f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val)
-                        else:
-                            st.markdown("<div style='text-align:right; margin-top:10px;'><span class='no-value'>Sem Valor Claro</span></div>", unsafe_allow_html=True)
-
+                    else:
+                        st.markdown("""
+                        <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
+                            Sem Edge Claro
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
                     st.markdown("</div>", unsafe_allow_html=True)
 
 with tab_adm:

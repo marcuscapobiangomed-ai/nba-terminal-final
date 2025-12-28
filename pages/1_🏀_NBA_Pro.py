@@ -257,6 +257,31 @@ else:
                     score_a = linfo['s_away'] if is_live and linfo else "-"
                     score_h = linfo['s_home'] if is_live and linfo else "-"
                     
+                    # Logica de Decisão (Calculada antes do HTML)
+                    diff = abs(fair - m_spr)
+                    bet_html = ""
+                    
+                    if diff >= 1.5:
+                        pick = h if fair < m_spr else a
+                        line = m_spr if pick == h else -m_spr
+                        val = val_unid * (1.5 if diff > 3 else 0.75)
+                        
+                        # Armazena botão em HTML
+                        bet_html = f"""
+                        <div class="bet-box">
+                            <div class="bet-title">VALOR ENCONTRADO</div>
+                            <div class="bet-pick">{pick} {line:+.1f}</div>
+                            <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val:.0f}</div>
+                        </div>
+                        """
+                    else:
+                        bet_html = """
+                        <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
+                            Sem Edge Claro
+                        </div>
+                        """
+                    
+                    # Renderiza TUDO em um único bloco Markdown para não quebrar o HTML
                     st.markdown(f"""
                     <div class="{css_class}">
                         <div class="card-header">
@@ -283,29 +308,10 @@ else:
                                 <div class="metric-val">{m_spr:+.1f}</div>
                             </div>
                         </div>
-                    """, unsafe_allow_html=True)
-                    
-                    diff = abs(fair - m_spr)
-                    if diff >= 1.5:
-                        pick = h if fair < m_spr else a
-                        line = m_spr if pick == h else -m_spr
-                        val = val_unid * (1.5 if diff > 3 else 0.75)
                         
-                        st.markdown(f"""
-                        <div class="bet-box">
-                            <div class="bet-title">VALOR ENCONTRADO</div>
-                            <div class="bet-pick">{pick} {line:+.1f}</div>
-                            <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val:.0f}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown("""
-                        <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
-                            Sem Edge Claro
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
+                        {bet_html}
+                    </div>
+                    """, unsafe_allow_html=True)
 
 with tab_adm:
     st.subheader("📈 Performance")

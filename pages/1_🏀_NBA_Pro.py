@@ -34,28 +34,22 @@ st.markdown("""
         border-right: 1px solid #1e293b;
     }
     
-    /* CARD PRINCIPAL (GLASS EFFECT) */
+    /* CARD PRINCIPAL */
     .game-card {
         background: rgba(30, 41, 59, 0.7);
         backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.05);
         border-radius: 16px;
-        padding: 0; /* Padding controlado internamente */
         margin-bottom: 24px;
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
         overflow: hidden;
-        transition: all 0.3s ease;
-    }
-    .game-card:hover {
-        border-color: rgba(255, 255, 255, 0.1);
-        transform: translateY(-2px);
     }
     
     .card-live {
         border-left: 4px solid #ef4444;
     }
     
-    /* HEADER DO CARD (Status e Times) */
+    /* HEADER */
     .card-header {
         padding: 20px 24px;
         background: rgba(15, 23, 42, 0.4);
@@ -67,26 +61,16 @@ st.markdown("""
     
     .status-badge {
         font-family: 'Roboto Mono', monospace;
-        font-size: 0.7rem;
-        font-weight: 700;
-        color: #94a3b8;
-        background: #1e293b;
-        padding: 4px 10px;
-        border-radius: 6px;
-        border: 1px solid #334155;
+        font-size: 0.7rem; font-weight: 700; color: #94a3b8;
+        background: #1e293b; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;
     }
     .live-badge { color: #fca5a5; border-color: #7f1d1d; background: #450a0a; }
 
-    .team-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-    }
+    .team-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; width: 100%; }
     .team-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
     .team-score { font-family: 'Roboto Mono', monospace; font-size: 1.4rem; font-weight: 700; color: #fff; }
 
-    /* CORPO DO CARD (Métricas) */
+    /* BODY */
     .card-body {
         padding: 20px 24px;
         display: grid;
@@ -96,57 +80,30 @@ st.markdown("""
     
     .metric-col {
         background: rgba(255,255,255,0.03);
-        border-radius: 10px;
-        padding: 10px;
-        text-align: center;
+        border-radius: 10px; padding: 10px; text-align: center;
     }
     .metric-lbl { font-size: 0.65rem; color: #64748b; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
     .metric-val { font-size: 1.1rem; color: #e2e8f0; font-weight: 700; font-family: 'Roboto Mono'; }
     .val-highlight { color: #38bdf8; }
 
-    /* RODAPÉ DE AÇÃO */
+    /* ACTION */
     .card-action {
         padding: 16px 24px;
         background: rgba(34, 197, 94, 0.05);
         border-top: 1px solid rgba(34, 197, 94, 0.1);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+        display: flex; justify-content: space-between; align-items: center;
     }
-    
-    .value-tag {
-        color: #4ade80;
-        font-weight: 700;
-        font-size: 0.8rem;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    
+    .value-tag { color: #4ade80; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
     .bet-info { font-size: 1rem; color: #fff; font-weight: 800; }
 
-    /* NOTÍCIAS */
-    .news-item {
-        background: #1e293b;
-        border-radius: 8px;
-        padding: 12px;
-        margin-bottom: 8px;
-        border-left: 3px solid #3b82f6;
-    }
-    
-    /* GESTÃO BANCA SIDEBAR */
-    .bankroll-card {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 16px;
-        text-align: center;
-    }
+    /* UTILS */
+    .news-item { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
+    .bankroll-card { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; text-align: center; }
 
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. FUNÇÕES (Mesma Lógica Robusta) ---
+# --- 3. FUNÇÕES ---
 def load_history():
     if not os.path.exists(HISTORY_FILE): return pd.DataFrame(columns=["Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
     return pd.read_csv(HISTORY_FILE)

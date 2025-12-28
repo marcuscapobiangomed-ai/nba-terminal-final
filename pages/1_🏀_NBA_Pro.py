@@ -40,27 +40,27 @@ st.markdown("""
     }
     
     .status-badge {
-        font-family: 'Roboto Mono', monospace; font-size: 0.7rem; font-weight: 700;
-        color: #94a3b8; background: #1e293b; padding: 4px 10px; border-radius: 6px; border: 1px solid #334155;
+        font-family: 'Roboto Mono', monospace; font-size: 0.75rem; font-weight: 800;
+        color: #ffffff; background: #334155; padding: 4px 12px; border-radius: 6px; border: 1px solid #475569;
     }
-    .live-badge { color: #fca5a5; border-color: #7f1d1d; background: #450a0a; }
+    .live-badge { color: #fee2e2; border-color: #991b1b; background: #7f1d1d; }
 
     .team-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; width: 100%; }
-    .team-name { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
-    .team-score { font-family: 'Roboto Mono', monospace; font-size: 1.4rem; font-weight: 700; color: #fff; }
+    .team-name { font-size: 1.2rem; font-weight: 800; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    .team-score { font-family: 'Roboto Mono', monospace; font-size: 1.5rem; font-weight: 800; color: #ffffff; text-shadow: 0 0 10px rgba(255,255,255,0.2); }
 
     .card-body { padding: 20px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .metric-col { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 10px; text-align: center; }
-    .metric-lbl { font-size: 0.65rem; color: #64748b; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-    .metric-val { font-size: 1.1rem; color: #e2e8f0; font-weight: 700; font-family: 'Roboto Mono'; }
-    .val-highlight { color: #38bdf8; }
+    .metric-col { background: rgba(0,0,0,0.3); border-radius: 10px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
+    .metric-lbl { font-size: 0.75rem; color: #cbd5e1; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 4px; }
+    .metric-val { font-size: 1.25rem; color: #ffffff; font-weight: 700; font-family: 'Roboto Mono'; }
+    .val-highlight { color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
 
     .card-action {
-        padding: 16px 24px; background: rgba(34, 197, 94, 0.05);
-        border-top: 1px solid rgba(34, 197, 94, 0.1); display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 24px; background: rgba(34, 197, 94, 0.1);
+        border-top: 1px solid rgba(34, 197, 94, 0.2); display: flex; justify-content: space-between; align-items: center;
     }
-    .value-tag { color: #4ade80; font-weight: 700; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
-    .bet-info { font-size: 1rem; color: #fff; font-weight: 800; }
+    .value-tag { color: #4ade80; font-weight: 800; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; }
+    .bet-info { font-size: 1.1rem; color: #ffffff; font-weight: 900; }
 
     .news-item { background: #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 8px; border-left: 3px solid #3b82f6; }
     .bankroll-card { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #334155; border-radius: 12px; padding: 16px; text-align: center; }

@@ -31,23 +31,24 @@ def get_team_stats(season: Optional[str] = None) -> Dict[str, Dict]:
     season = season or config.nba_season
     
     try:
+        # Busca STATS AVANÇADOS (Ratings, Pace, eFG)
         stats = leaguedashteamstats.LeagueDashTeamStats(
             season=season,
-            measure_type_detailed_defense='Base'
+            measure_type_nullable='Advanced'
         ).get_data_frames()[0]
         
         data = {}
         for _, row in stats.iterrows():
-            # Net Rating real = OffRtg - DefRtg
-            net_rtg = row['OFF_RATING'] - row['DEF_RATING'] if 'OFF_RATING' in row else row['PTS'] - row['OPP_PTS']
+            # Net Rating já vem calculado no Advanced
+            net_rtg = row.get('NET_RATING', 0.0)
             
             data[row['TEAM_NAME']] = {
                 'pace': row['PACE'],
                 'off_rtg': row.get('OFF_RATING', 110.0),
                 'def_rtg': row.get('DEF_RATING', 110.0),
                 'net_rtg': net_rtg,
-                'efg': row['EFG_PCT'],
-                'tov': row['TM_TOV_PCT'],
+                'efg': row.get('EFG_PCT', 0.54),
+                'tov': row.get('TM_TOV_PCT', 0.14),
                 'orb': row.get('OREB_PCT', 0.25),
                 'ftr': row.get('FTA_RATE', 0.25),
                 'wins': row['W'],
@@ -164,8 +165,8 @@ def get_live_scores() -> Dict[str, Dict]:
                 "status": game['gameStatus'],  # 1=scheduled, 2=live, 3=final
                 "period": game['period'],
                 "clock": clock,
-                "score_home": game['homeTeam']['score'],
-                "score_away": game['awayTeam']['score'],
+                "s_home": game['homeTeam']['score'], # Fix: Renomeado para s_home
+                "s_away": game['awayTeam']['score'], # Fix: Renomeado para s_away
                 "home_team": game['homeTeam']['teamName'],
                 "away_team": game['awayTeam']['teamName'],
                 "game_id": game['gameId']

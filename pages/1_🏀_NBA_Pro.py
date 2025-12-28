@@ -1,27 +1,27 @@
 import streamlit as st
 import pandas as pd
-import requests
-import feedparser
-import os
 import plotly.express as px
 from datetime import datetime
-from deep_translator import GoogleTranslator
-from nba_api.stats.endpoints import leaguedashteamstats
+
+# Impor do Core (O Cérebro)
+from core.config import get_config
+from core import data_fetcher
+from core import odds_engine
+from core.backoffice import save_bet, load_history
 
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
 
-# Tenta pegar a chave dos segredos ou usa a hardcoded (fallback)
+# Carrega Config segura (Suporta Local .env e Cloud Secrets)
 try:
-    API_KEY = st.secrets["ODDS_API_KEY"]
-except:
-    API_KEY = "e6a32983f406a1fbf89fda109149ac15"
-
-HISTORY_FILE = "bets_history.csv"
+    CONFIG = get_config()
+except Exception as e:
+    st.error(f"Erro de Configuração: {e}")
+    st.stop()
 
 # Inicializa Estado
-if 'banca' not in st.session_state: st.session_state.banca = 1000.0
-if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0
+if 'banca' not in st.session_state: st.session_state.banca = CONFIG.default_bankroll
+if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = CONFIG.default_unit_percent
 
 # --- 2. CSS PREMIUM (DESIGN OVERHAUL - V13.1) ---
 st.markdown("""
@@ -132,63 +132,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. FUNÇÕES (MANTIDAS) ---
-def load_history():
-    if not os.path.exists(HISTORY_FILE): return pd.DataFrame(columns=["Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
-    return pd.read_csv(HISTORY_FILE)
-
-def save_bet(jogo, tipo, aposta, odd, valor):
-    df = load_history()
-    new_row = pd.DataFrame([{"Data": datetime.now().strftime("%Y-%m-%d %H:%M"), "Jogo": jogo, "Tipo": tipo, "Aposta": aposta, "Odd": odd, "Valor": valor, "Resultado": "Pendente", "Lucro": 0.0}])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(HISTORY_FILE, index=False)
-    st.toast(f"✅ Registrado: {aposta}")
-
-@st.cache_data(ttl=86400)
-def get_advanced_team_stats():
-    try:
-        stats = leaguedashteamstats.LeagueDashTeamStats(season='2024-25', measure_type_detailed_defense='Base').get_data_frames()[0]
-        data = {}
-        for _, row in stats.iterrows():
-            data[row['TEAM_NAME']] = {'pace': row['PACE'], 'efg': row['EFG_PCT'], 'net_rtg': row['PTS'] - row['OPP_PTS'], 'def_rtg': row['DEF_RATING']}
-        return data
-    except: return {}
-
-def clean_clock(raw):
-    if not raw: return ""
-    if "M" in raw: return f"{raw.replace('PT','').split('M')[0]}:{raw.split('M')[1].replace('S','').split('.')[0]}"
-    return raw
-
-@st.cache_data(ttl=20)
-def get_live_scores():
-    try:
-        data = requests.get("https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json").json()
-        live = {}
-        for g in data['scoreboard']['games']:
-            info = {"live": g['gameStatus'] == 2, "period": g['period'], "clock": clean_clock(g['gameClock']), 
-                    "s_home": g['homeTeam']['score'], "s_away": g['awayTeam']['score']}
-            live[g['homeTeam']['teamName']] = info; live[g['awayTeam']['teamName']] = info
-        return live
-    except: return {}
-
-def get_odds(api_key):
-    try: return requests.get(f'https://api.the-odds-api.com/v4/sports/basketball_nba/odds', params={'api_key': api_key, 'markets': 'spreads,totals', 'bookmakers': 'pinnacle'}).json()
-    except: return []
-
-@st.cache_data(ttl=600)
-def get_news():
-    try:
-        feed = feedparser.parse("https://www.espn.com/espn/rss/nba/news")
-        noticias = []
-        trans = GoogleTranslator(source='auto', target='pt')
-        for e in feed.entries[:3]:
-            try: tit = trans.translate(e.title).replace("Fontes:", "").strip()
-            except: tit = e.title
-            noticias.append({"titulo": tit, "hora": datetime(*e.published_parsed[:6]).strftime("%H:%M")})
-        return noticias
-    except: return []
-
-# --- 4. INTERFACE PRINCIPAL ---
+# --- 3. INTERFACE PRINCIPAL ---
 st.title("🏆 NBA Terminal Pro")
 
 # Sidebar
@@ -199,136 +143,171 @@ with st.sidebar:
     val_unid = st.session_state.banca * (st.session_state.unidade_pct / 100)
     st.markdown(f"**Unidade:** R$ {val_unid:.2f}")
     st.divider()
-    st.caption("v13.1 Stable • Slate Theme")
+    st.caption(f"Core v1.0 • UI v13.1 • Season {CONFIG.nba_season}")
 
 # Scan Button
 if st.button("🔄 SCAN LIVE MARKET", type="primary", use_container_width=True):
     st.cache_data.clear(); st.rerun()
 
-# DADOS
-STATS = get_advanced_team_stats()
-ODDS = get_odds(API_KEY)
-LIVE = get_live_scores()
+# --- 4. DATA FETCHING (VIA CORE) ---
+# Usando o data_fetcher que tem cache e fallback
+news = data_fetcher.get_news(max_items=3)
+if news:
+    with st.expander("📰 MANCHETES", expanded=False):
+        cols = st.columns(3)
+        for i, n in enumerate(news):
+            with cols[i]: st.markdown(f"<div class='news-card'><div class='news-time'>{n['hora']}</div><div class='news-title'>{n['titulo']}</div></div>", unsafe_allow_html=True)
 
-if not ODDS or isinstance(ODDS, dict) and 'message' in ODDS:
-    st.info("Mercado Fechado ou Offseason.")
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Busca dados inteligentes
+STATS = data_fetcher.get_team_stats(CONFIG.nba_season)
+ODDS = data_fetcher.get_odds(CONFIG.odds_api_key) # Passa a chave da API
+LIVE = data_fetcher.get_live_scores()
+
+if not ODDS:
+    st.info("Mercado Fechado, Limite de API Excedido ou Sem Jogos.")
 else:
     # GRID DE JOGOS (2 JOGOS POR LINHA PARA "ENQUADRAMENTO")
-    if not ODDS:
-        st.info("Nenhum jogo encontrado.")
-    else:
-        # Divide em chunks de 2 jogos para criar linhas
-        games_list = list(ODDS)
-        rows = [games_list[i:i + 2] for i in range(0, len(games_list), 2)]
-        
-        for row in rows:
-            cols = st.columns(2) # 2 Colunas para melhor uso de tela
-            for idx, game in enumerate(row):
-                with cols[idx]:
-                    h, a = game['home_team'], game['away_team']
+    games_list = list(ODDS)
+    rows = [games_list[i:i + 2] for i in range(0, len(games_list), 2)]
+    
+    for row in rows:
+        cols = st.columns(2)
+        for idx, game in enumerate(row):
+            with cols[idx]:
+                h, a = game['home_team'], game['away_team']
+                
+                # Live Info
+                linfo = None
+                for k, v in LIVE.items():
+                    if k in h or h in k: linfo = v; break
+                is_live = linfo['live'] if linfo else False
+                
+                # --- MODELAGEM (O CORAÇÃO DO SISTEMA) ---
+                # Busca stats do dicionário
+                s_h = data_fetcher.find_team_stats(h, STATS)
+                s_a = data_fetcher.find_team_stats(a, STATS)
+                
+                # Calcula Linha Justa usando Odds Engine
+                if s_h and s_a:
+                    fair = odds_engine.calculate_fair_spread(
+                        home_net_rtg=s_h['net_rtg'], 
+                        away_net_rtg=s_a['net_rtg'],
+                        home_advantage=CONFIG.home_advantage
+                    )
+                else:
+                    fair = 0.0 # Sem dados suficientes
+                
+                # --- MERCADO ---
+                m_spr = 0.0
+                try:
+                    # Parse odds usando helper
+                    parsed = data_fetcher.parse_market_odds(game)
+                    if parsed:
+                        m_spr = parsed['spread']
+                        # Ajusta sinal se necessário (parse_market_odds já deve retornar correto, mas garantindo ref)
+                        # A função parse_market_odds retorna spread do home team
+                except: pass
+                
+                if m_spr == 0.0: continue
+                
+                # --- DECISÃO (KELLY) ---
+                edge = odds_engine.calculate_edge(fair, m_spr)
+                
+                # Render Card
+                css_class = "game-card card-live" if is_live else "game-card"
+                clock = f"Q{linfo['period']} {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
+                status_class = "status-live" if is_live else "status-pre"
+                
+                score_a = linfo['s_away'] if is_live and linfo else "-"
+                score_h = linfo['s_home'] if is_live and linfo else "-"
+                
+                # Constrói HTML do Botão de Aposta
+                bet_html = ""
+                
+                # Só mostra botão se tiver valor real
+                if edge >= CONFIG.min_edge_spread:
+                    # Quem apostar?
+                    # Se Fair (-5) < Mercado (-2), Home é favorito por mais pts que o mercado acha -> Bet Home
+                    # Se Fair (-2) > Mercado (-5), Mercado superestima Home -> Bet Away
+                    pick = h if fair < m_spr else a
+                    line = m_spr if pick == h else -m_spr # Inverte sinal se for away
                     
-                    # Live Info
-                    linfo = None
-                    for k, v in LIVE.items():
-                        if k in h or h in k: linfo = v; break
-                    is_live = linfo['live'] if linfo else False
+                    # Calcula Stake com Kelly
+                    units = odds_engine.kelly_stake(
+                        edge=edge, 
+                        odds=1.91, 
+                        fraction=CONFIG.kelly_fraction,
+                        max_stake=5.0
+                    )
                     
-                    # Model
-                    s_h = next((v for k,v in STATS.items() if k in h or h in k), {'net_rtg':0})
-                    s_a = next((v for k,v in STATS.items() if k in a or a in k), {'net_rtg':0})
-                    fair = -((s_h['net_rtg'] + 2.5) - s_a['net_rtg'])
+                    # Fallback mínimo de unidades se o Kelly der muito baixo mas tem edge
+                    if units < 0.1: units = 0.5
                     
-                    # Market Spread
-                    m_spr = 0.0
-                    try:
-                        for s in game.get('bookmakers', []):
-                             for m in s.get('markets', []):
-                                if m['key'] == 'spreads':
-                                    m_spr = m['outcomes'][0]['point'] if m['outcomes'][0]['name'] == h else -m['outcomes'][0]['point']
-                                    break
-                    except: pass
-                    if m_spr == 0.0: continue
+                    val_bet = val_unid * units
                     
-                    # Render Card
-                    css_class = "game-card card-live" if is_live else "game-card"
-                    clock = f"Q{linfo['period']} {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
-                    status_class = "status-live" if is_live else "status-pre"
-                    
-                    score_a = linfo['s_away'] if is_live and linfo else "-"
-                    score_h = linfo['s_home'] if is_live and linfo else "-"
-                    
-                    # Logica de Decisão (Calculada antes do HTML)
-                    diff = abs(fair - m_spr)
-                    bet_html = ""
-                    
-                    if diff >= 1.5:
-                        pick = h if fair < m_spr else a
-                        line = m_spr if pick == h else -m_spr
-                        val = val_unid * (1.5 if diff > 3 else 0.75)
-                        
-                        # Armazena botão em HTML
-                        bet_html = f"""
-                        <div class="bet-box">
-                            <div class="bet-title">VALOR ENCONTRADO</div>
-                            <div class="bet-pick">{pick} {line:+.1f}</div>
-                            <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val:.0f}</div>
-                        </div>
-                        """
-                    else:
-                        bet_html = """
-                        <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
-                            Sem Edge Claro
-                        </div>
-                        """
-                    
-                    # Renderiza TUDO em um único bloco Markdown para não quebrar o HTML
-                    st.markdown(f"""
-                    <div class="{css_class}">
-                        <div class="card-header">
-                            <span class="{status_class}">{clock}</span>
-                            <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
-                        </div>
-                        
-                        <div class="team-row">
-                            <span class="team-name">{a}</span>
-                            <span class="team-score">{score_a}</span>
-                        </div>
-                        <div class="team-row">
-                            <span class="team-name">{h}</span>
-                            <span class="team-score">{score_h}</span>
-                        </div>
-                        
-                        <div class="data-grid">
-                            <div class="metric-col">
-                                <div class="metric-lbl">MODELO</div>
-                                <div class="metric-val">{fair:+.1f}</div>
-                            </div>
-                            <div class="metric-col">
-                                <div class="metric-lbl">MERCADO</div>
-                                <div class="metric-val">{m_spr:+.1f}</div>
-                            </div>
-                        </div>
-                        
-                        {bet_html}
+                    bet_html = f"""
+                    <div class="bet-box">
+                        <div class="bet-title">VALOR ENCONTRADO ({edge:.1f}pts)</div>
+                        <div class="bet-pick">{pick} {line:+.1f}</div>
+                        <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val_bet:.0f} ({units:.1f}u)</div>
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                else:
+                    bet_html = """
+                    <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
+                        Sem Edge Claro
+                    </div>
+                    """
+                
+                # Renderiza HTML Único
+                st.markdown(f"""
+                <div class="{css_class}">
+                    <div class="card-header">
+                        <span class="{status_class}">{clock}</span>
+                        <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
+                    </div>
+                    
+                    <div class="team-row">
+                        <span class="team-name">{a}</span>
+                        <span class="team-score">{score_a}</span>
+                    </div>
+                    <div class="team-row">
+                        <span class="team-name">{h}</span>
+                        <span class="team-score">{score_h}</span>
+                    </div>
+                    
+                    <div class="data-grid">
+                        <div class="metric-col">
+                            <div class="metric-lbl">MODELO</div>
+                            <div class="metric-val">{fair:+.1f}</div>
+                        </div>
+                        <div class="metric-col">
+                            <div class="metric-lbl">MERCADO</div>
+                            <div class="metric-val">{m_spr:+.1f}</div>
+                        </div>
+                    </div>
+                    
+                    {bet_html}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Botão Save (invisible mas funcional via Streamlit native elements fora do HTML custom)
+                if edge >= CONFIG.min_edge_spread:
+                     if st.button("💾 Salvar Bet", key=f"save_{game['id']}", help="Registrar na Planilha"):
+                         save_bet(CONFIG.bets_history_file, f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val_bet)
+                         st.toast("Aposta Salva!")
 
-with tab_adm:
-    st.subheader("📈 Performance")
-    df = load_history()
-    if not df.empty:
-        edited = st.data_editor(df, num_rows="dynamic", key="editor", column_config={"Resultado": st.column_config.SelectboxColumn("Status", options=["Pendente","Green","Red"])})
-        if st.button("Atualizar Lucro"):
-            for i, r in edited.iterrows():
-                if r['Resultado'] == 'Green': edited.at[i, 'Lucro'] = r['Valor'] * 0.91
-                elif r['Resultado'] == 'Red': edited.at[i, 'Lucro'] = -r['Valor']
-            edited.to_csv(HISTORY_FILE, index=False); st.rerun()
-        
-        # Gráfico Clean
-        if not edited[edited['Resultado']!='Pendente'].empty:
-            edited['Acumulado'] = edited['Lucro'].cumsum()
-            fig = px.area(edited, y='Acumulado', title='Curva de Lucro (R$)', template='plotly_dark')
-            fig.update_traces(line_color='#38bdf8', fill_color='rgba(56, 189, 248, 0.2)')
-            st.plotly_chart(fig, use_container_width=True)
+# --- 5. RESULTADOS (BACKOFFICE) ---
+st.divider()
+st.header("📊 Performance Recente")
+try:
+    df_hist = load_history(CONFIG.bets_history_file)
+    if not df_hist.empty:
+        df_hist['Acumulado'] = df_hist['Lucro'].cumsum()
+        st.area_chart(df_hist, x='Data', y='Acumulado', color='#38bdf8')
     else:
-        st.info("Histórico vazio.")
+        st.caption("Nenhuma aposta registrada ainda.")
+except:
+    st.caption("Histórico indisponível.")

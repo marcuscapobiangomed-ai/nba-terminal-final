@@ -5,16 +5,23 @@ import requests
 import feedparser
 import os
 import textwrap # <--- A SOLUÇÃO MÁGICA
-import plotly.express as px
-from datetime import datetime
-from deep_translator import GoogleTranslator
 import sys
-from pathlib import Path
+import os
 
 # Adiciona diretório raiz ao path para importar 'core' corretamente
-root_path = Path(__file__).parent.parent
-if str(root_path) not in sys.path:
-    sys.path.append(str(root_path))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_path = os.path.dirname(current_dir) # Sobe um nível (de pages/ para raiz)
+
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
+# DEBUG: Verificar se o sistema de arquivos está montado corretamente
+print(f"📂 Root Path: {root_path}")
+try:
+    print(f"📂 Conteúdo Root: {os.listdir(root_path)}")
+    print(f"📂 Conteúdo Core: {os.listdir(os.path.join(root_path, 'core'))}")
+except Exception as e:
+    print(f"⚠️ Erro ao listar diretórios: {e}")
 
 from core.player_props import PlayerPropsEngine
 from core.star_impact import get_team_stars

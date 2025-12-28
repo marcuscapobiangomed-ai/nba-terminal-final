@@ -10,6 +10,7 @@ from datetime import datetime
 from deep_translator import GoogleTranslator
 from nba_api.stats.endpoints import leaguedashteamstats
 from pathlib import Path
+from core.player_props import PlayerPropsEngine
 
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
@@ -136,7 +137,60 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"<div class='bankroll-card'><div style='color:#64748b;font-size:0.75rem;font-weight:700'>VALOR 1 UNIDADE</div><div style='color:#38bdf8;font-size:1.6rem;font-weight:800'>R$ {val_unid:.2f}</div></div>", unsafe_allow_html=True)
 
-tab_ops, tab_adm = st.tabs(["⚡ MERCADO AO VIVO", "📊 MINHA CARTEIRA"])
+# Inicializa Engine
+if 'props_engine' not in st.session_state:
+    st.session_state.props_engine = PlayerPropsEngine()
+
+tab_ops, tab_props, tab_adm = st.tabs(["⚡ MERCADO AO VIVO", "🎯 SMART PROPS", "📊 MINHA CARTEIRA"])
+
+with tab_props:
+    st.markdown("### 🤖 Projeção de Jogadores (Beta)")
+    col_p1, col_p2 = st.columns([2, 1])
+    with col_p1:
+        p_name = st.text_input("Nome do Jogador:", placeholder="Ex: LeBron James, Curry...")
+    with col_p2:
+        opp_team = st.text_input("Contra (Sigla):", placeholder="Ex: GSW, BOS...")
+
+    if p_name and opp_team and st.button("🔮 Calcular Projeção", type="primary"):
+        with st.spinner(f"Analisando dados de {p_name}..."):
+            proj = st.session_state.props_engine.get_projection(p_name, opp_team.upper())
+            
+        if proj:
+            html_card = textwrap.dedent(f"""
+            <div class="game-card" style="padding: 20px; text-align: center;">
+                <div style="font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 10px;">
+                    {proj['player']} <span style="color:#64748b; font-size:1rem;">vs {proj['opponent']}</span>
+                </div>
+                
+                <div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin-bottom: 20px;">
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.8rem; color: #94a3b8;">MÉDIA TEMP</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #e2e8f0;">{proj['season_avg']}</div>
+                    </div>
+                    <div style="width: 1px; height: 40px; background: #334155;"></div>
+                    <div style="text-align: left;">
+                        <div style="font-size: 0.8rem; color: #38bdf8;">ÚLT. 5 JOGOS</div>
+                        <div style="font-size: 1.2rem; font-weight: 700; color: #fff;">{proj['last_5_avg']}</div>
+                    </div>
+                </div>
+
+                <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div style="font-size: 0.9rem; color: #cbd5e1; letter-spacing: 0.1em; font-weight: 700;">PROJEÇÃO FINAL</div>
+                    <div style="font-size: 3rem; font-weight: 900; color: #4ade80; text-shadow: 0 0 20px rgba(74, 222, 128, 0.3);">
+                        {proj['projection']} <span style="font-size: 1rem; color: #fff;">PTS</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
+                        Ajuste Matchup: <span style="color: {'#ef4444' if proj['matchup_adj'] < 0 else '#4ade80'}">{proj['matchup_adj']:+.1f}</span>
+                    </div>
+                </div>
+            </div>
+            """)
+            st.markdown(html_card, unsafe_allow_html=True)
+            
+            if st.button(f"📥 Registrar Over {proj['projection']}", key="btn_prop"):
+                save_bet(f"{proj['player']} (Props)", "Over Pts", f"Over {proj['projection']}", 1.90, st.session_state.banca * 0.01)
+        else:
+            st.error("Jogador não encontrado ou dados insuficientes.")
 
 with tab_ops:
     c_scan, c_news = st.columns([1.5, 4])

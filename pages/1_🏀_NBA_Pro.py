@@ -215,90 +215,96 @@ else:
                 # --- DECISÃO (KELLY) ---
                 edge = odds_engine.calculate_edge(fair, m_spr)
                 
-                # Render Card
-                css_class = "game-card card-live" if is_live else "game-card"
-                clock = f"Q{linfo['period']} {linfo['clock']}" if is_live and linfo else pd.to_datetime(game.get('commence_time', datetime.now())).strftime('%H:%M')
+                # --- RENDERIZAÇÃO SEGURA (COMPATIBILIDADE STREAMLIT) ---
+                css_card = "game-card card-live" if is_live else "game-card"
                 status_class = "status-live" if is_live else "status-pre"
                 
-                score_a = linfo['s_away'] if is_live and linfo else "-"
-                score_h = linfo['s_home'] if is_live and linfo else "-"
+                # Prepara componentes visuais
+                status_html = f"<span class='{status_class}'>{clock}</span>"
+                team_a_html = f"<div class='team-name'>{a}</div>"
+                team_h_html = f"<div class='team-name'>{h}</div>"
                 
-                # Constrói HTML do Botão de Aposta
-                bet_html = ""
+                # HTML Placar
+                scores_html = ""
+                if is_live:
+                    scores_html = f"""
+                    <div style='display:flex; flex-direction:column; justify-content:center; gap:5px;'>
+                        <div class='score-big' style='background:#1f2937; padding:2px 8px; border-radius:4px; text-align:center; font-weight:800;'>{score_a}</div>
+                        <div class='score-big' style='background:#1f2937; padding:2px 8px; border-radius:4px; text-align:center; font-weight:800;'>{score_h}</div>
+                    </div>
+                    """
                 
-                # Só mostra botão se tiver valor real
-                if edge >= CONFIG.min_edge_spread:
-                    # Quem apostar?
-                    # Se Fair (-5) < Mercado (-2), Home é favorito por mais pts que o mercado acha -> Bet Home
-                    # Se Fair (-2) > Mercado (-5), Mercado superestima Home -> Bet Away
+                # Decisão / Botão
+                decision_html = ""
+                has_val = edge >= CONFIG.min_edge_spread
+                
+                if has_val:
                     pick = h if fair < m_spr else a
-                    line = m_spr if pick == h else -m_spr # Inverte sinal se for away
+                    line = m_spr if pick == h else -m_spr
                     
-                    # Calcula Stake com Kelly
-                    units = odds_engine.kelly_stake(
-                        edge=edge, 
-                        odds=1.91, 
-                        fraction=CONFIG.kelly_fraction,
-                        max_stake=5.0
-                    )
-                    
-                    # Fallback mínimo de unidades se o Kelly der muito baixo mas tem edge
+                    # Recalcula Kelly
+                    units = odds_engine.kelly_stake(edge, 1.91, CONFIG.kelly_fraction, 5.0)
                     if units < 0.1: units = 0.5
-                    
                     val_bet = val_unid * units
                     
-                    bet_html = f"""
-                    <div class="bet-box">
-                        <div class="bet-title">VALOR ENCONTRADO ({edge:.1f}pts)</div>
-                        <div class="bet-pick">{pick} {line:+.1f}</div>
-                        <div style="font-size:0.8rem; color:#a7f3d0;">Apostar R$ {val_bet:.0f} ({units:.1f}u)</div>
+                    bet_val_txt = f"APOSTAR R$ {val_bet:.0f}"
+                    bet_pick_txt = f"{pick} {line:+.1f}"
+                    
+                    decision_html = f"""
+                    <div class='bet-box'>
+                        <div class='bet-title' style='color:#34d399; font-size:0.7rem;'>VALOR ENCONTRADO ({edge:.1f}pts)</div>
+                        <div style='font-weight:bold; color:white;'>{bet_pick_txt}</div>
+                        <div style='font-size:0.8rem; color:#a7f3d0;'>{bet_val_txt} ({units:.1f}u)</div>
                     </div>
                     """
                 else:
-                    bet_html = """
-                    <div style="text-align:center; padding:10px; opacity:0.5; font-size:0.8rem;">
-                        Sem Edge Claro
-                    </div>
-                    """
-                
-                # Renderiza HTML Único
-                # Renderiza HTML Único (Sem indentação para evitar Code Block do Markdown)
-                st.markdown(f"""
-<div class="{css_class}">
-    <div class="card-header">
-        <span class="{status_class}">{clock}</span>
-        <span style="font-size:0.8rem; color:#6b7280;">SPREAD</span>
-    </div>
-    
-    <div class="team-row">
-        <span class="team-name">{a}</span>
-        <span class="team-score">{score_a}</span>
-    </div>
-    <div class="team-row">
-        <span class="team-name">{h}</span>
-        <span class="team-score">{score_h}</span>
-    </div>
-    
-    <div class="data-grid">
-        <div class="metric-col">
-            <div class="metric-lbl">MODELO</div>
-            <div class="metric-val">{fair:+.1f}</div>
-        </div>
-        <div class="metric-col">
-            <div class="metric-lbl">MERCADO</div>
-            <div class="metric-val">{m_spr:+.1f}</div>
-        </div>
-    </div>
-    
-    {bet_html}
-</div>
-""", unsafe_allow_html=True)
-                
-                # Botão Save (invisible mas funcional via Streamlit native elements fora do HTML custom)
-                if edge >= CONFIG.min_edge_spread:
-                     if st.button("💾 Salvar Bet", key=f"save_{game['id']}", help="Registrar na Planilha"):
-                         save_bet(CONFIG.bets_history_file, f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val_bet)
-                         st.toast("Aposta Salva!")
+                    decision_html = "<div style='text-align:right; margin-top:20px; opacity:0.5; font-size:0.75rem;'>Sem Valor</div>"
+
+                # Renderiza Container do Card
+                with st.container():
+                    # Abre container visual (div wrapper)
+                    st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
+                    
+                    # Layout Colunas Internas
+                    c1, c2, c3 = st.columns([3.5, 1.5, 3])
+                    
+                    with c1:
+                        # Times e Status
+                        st.markdown(f"""
+                        <div style='margin-bottom:8px'>{status_html}</div>
+                        {team_a_html}
+                        {team_h_html}
+                        """, unsafe_allow_html=True)
+                    
+                    with c2:
+                        # Placares (centralizados verticalmente pelo flexbox css do card ou bruts force aqui)
+                        st.markdown(scores_html, unsafe_allow_html=True)
+                        
+                    with c3:
+                        # Métricas
+                        st.markdown(f"""
+                        <div class="data-grid" style="border:none; margin-top:0; padding-top:0;">
+                            <div class="metric-col">
+                                <div class="metric-lbl">MODELO</div>
+                                <div class="metric-val" style='color:#38bdf8'>{fair:+.1f}</div>
+                            </div>
+                            <div class="metric-col">
+                                <div class="metric-lbl">MERCADO</div>
+                                <div class="metric-val">{m_spr:+.1f}</div>
+                            </div>
+                        </div>
+                        {decision_html}
+                        """, unsafe_allow_html=True)
+                        
+                        # Botão Nativo (Salva vidas)
+                        if has_val:
+                            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                            if st.button("💾 REGISTRAR", key=f"btn_{game['id']}", help="Salvar na Planilha"):
+                                save_bet(CONFIG.bets_history_file, f"{a} @ {h}", "Spread", f"{pick} {line:+.1f}", 1.91, val_bet)
+                                st.toast("✅ Aposta Registrada!")
+
+                    # Fecha div do card
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. RESULTADOS (BACKOFFICE) ---
 st.divider()

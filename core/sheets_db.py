@@ -9,13 +9,23 @@ import pytz
 SHEET_NAME = "NBA_Bets_Database"
 
 def _get_connection():
-    """Retorna conexão com Google Sheets"""
-    return st.connection("gsheets", type=GSheetsConnection)
+    """Retorna conexão com Google Sheets com validação"""
+    try:
+        # Verifica se secrets existem antes de tentar conectar
+        if "connections" not in st.secrets or "gsheets" not in st.secrets["connections"]:
+            return None
+        return st.connection("gsheets", type=GSheetsConnection)
+    except Exception:
+        return None
 
 def load_history():
     """Carrega histórico de apostas da planilha"""
     try:
         conn = _get_connection()
+        if conn is None:
+            st.warning("⚠️ **Configuração:** Adicione as credenciais do Google Sheets no Streamlit Secrets.")
+            return pd.DataFrame(columns=["ID", "Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
+            
         # Lê a planilha. ttl=0 garante que não cacheie (sempre pega dados novos)
         df = conn.read(worksheet=SHEET_NAME, ttl=0)
         
@@ -47,6 +57,12 @@ def load_history():
 def save_bet(jogo, tipo, aposta, odd, valor):
     """Salva nova aposta adicionando linha na planilha"""
     try:
+        # Verifica conexão
+        conn = _get_connection()
+        if conn is None:
+            st.error("⚠️ Configuração: Configure os Secrets do Google Sheets.")
+            return False
+
         df = load_history()
         
         # Gera novo ID

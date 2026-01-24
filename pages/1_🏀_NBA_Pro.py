@@ -16,18 +16,30 @@ except Exception as e:
 
 import streamlit as st
 import pandas as pd
-import requests
-import feedparser
-import textwrap 
+import textwrap
+import plotly.express as px
+from datetime import datetime
 
+# --- CARREGA VARIÁVEIS DE AMBIENTE ---
+from dotenv import load_dotenv
+load_dotenv()
+
+# --- IMPORTS DO CORE ---
+from core.data_fetcher import get_team_stats, get_odds, get_live_scores, get_news
 from core.player_props import PlayerPropsEngine
 from core.star_impact import get_team_stars
+# --- MIGRAÇÃO GOOGLE SHEETS ---
+# Substituindo core.database por core.sheets_db
+from core.sheets_db import save_bet as db_save_bet, load_history as db_load_history, update_bet_result
 
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
-API_KEY = "e6a32983f406a1fbf89fda109149ac15"
-# Define caminho absoluto para o arquivo na raiz do projeto
-HISTORY_FILE = Path(__file__).parent.parent / "bets_history.csv"
+
+# Carrega variáveis de ambiente
+load_dotenv()
+API_KEY = os.getenv("ODDS_API_KEY")
+
+# Banco de dados agora é Google Sheets (não precisa de init local)
 
 if 'banca' not in st.session_state: st.session_state.banca = 1000.0
 if 'unidade_pct' not in st.session_state: st.session_state.unidade_pct = 1.0
@@ -83,59 +95,13 @@ st.markdown("""
 
 # --- 3. FUNÇÕES ---
 def load_history():
-    if not os.path.exists(HISTORY_FILE): return pd.DataFrame(columns=["Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
-    return pd.read_csv(HISTORY_FILE)
+    return db_load_history()
 
 def save_bet(jogo, tipo, aposta, odd, valor):
-    df = load_history()
-    new_row = pd.DataFrame([{"Data": datetime.now().strftime("%Y-%m-%d %H:%M"), "Jogo": jogo, "Tipo": tipo, "Aposta": aposta, "Odd": odd, "Valor": valor, "Resultado": "Pendente", "Lucro": 0.0}])
-    df = pd.concat([df, new_row], ignore_index=True)
-    df.to_csv(HISTORY_FILE, index=False)
-    st.toast(f"✅ Registrado: {aposta}")
-
-@st.cache_data(ttl=86400)
-def get_advanced_team_stats():
-    try:
-        stats = leaguedashteamstats.LeagueDashTeamStats(season='2024-25', measure_type_detailed_defense='Base').get_data_frames()[0]
-        data = {}
-        for _, row in stats.iterrows():
-            data[row['TEAM_NAME']] = {'net_rtg': row['PTS'] - row['OPP_PTS']}
-        return data
-    except: return {}
-
-def clean_clock(raw):
-    if not raw: return ""
-    if "M" in raw: return f"{raw.replace('PT','').split('M')[0]}:{raw.split('M')[1].replace('S','').split('.')[0]}"
-    return raw
-
-@st.cache_data(ttl=20)
-def get_live_scores():
-    try:
-        data = requests.get("https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json").json()
-        live = {}
-        for g in data['scoreboard']['games']:
-            info = {"live": g['gameStatus'] == 2, "period": g['period'], "clock": clean_clock(g['gameClock']), 
-                    "s_home": g['homeTeam']['score'], "s_away": g['awayTeam']['score']}
-            live[g['homeTeam']['teamName']] = info; live[g['awayTeam']['teamName']] = info
-        return live
-    except: return {}
-
-def get_odds(api_key):
-    try: return requests.get(f'https://api.the-odds-api.com/v4/sports/basketball_nba/odds', params={'api_key': api_key, 'markets': 'spreads', 'bookmakers': 'pinnacle'}).json()
-    except: return []
-
-@st.cache_data(ttl=600)
-def get_news():
-    try:
-        feed = feedparser.parse("https://www.espn.com/espn/rss/nba/news")
-        noticias = []
-        trans = GoogleTranslator(source='auto', target='pt')
-        for e in feed.entries[:3]:
-            try: tit = trans.translate(e.title).replace("Fontes:", "").strip()
-            except: tit = e.title
-            noticias.append({"titulo": tit, "hora": datetime(*e.published_parsed[:6]).strftime("%H:%M")})
-        return noticias
-    except: return []
+    if db_save_bet(jogo, tipo, aposta, odd, valor):
+        st.toast(f"✅ Registrado: {aposta}")
+    else:
+        st.error("Erro ao registrar aposta!")
 
 # --- 4. INTERFACE ---
 st.title("🏆 NBA Terminal Pro")
@@ -148,6 +114,15 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"<div class='bankroll-card'><div style='color:#64748b;font-size:0.75rem;font-weight:700'>VALOR 1 UNIDADE</div><div style='color:#38bdf8;font-size:1.6rem;font-weight:800'>R$ {val_unid:.2f}</div></div>", unsafe_allow_html=True)
 
+    # Status Conexão
+    st.markdown("---")
+    try:
+        db_load_history()
+        st.caption("🟢 Conectado ao Google Sheets")
+    except Exception as e:
+        st.error("🔴 Offline: Verifique segredos")
+
+
 # Inicializa Engine
 if 'props_engine' not in st.session_state:
     st.session_state.props_engine = PlayerPropsEngine()
@@ -156,17 +131,22 @@ tab_ops, tab_props, tab_adm = st.tabs(["⚡ MERCADO AO VIVO", "🎯 SMART PROPS"
 
 with tab_props:
     st.markdown("### 🤖 Projeção de Jogadores (Beta)")
-    col_p1, col_p2 = st.columns([2, 1])
+    col_p1, col_p2, col_p3 = st.columns([2, 1, 1])
     with col_p1:
-        p_name = st.text_input("Nome do Jogador:", placeholder="Ex: LeBron James, Curry...")
+        p_name = st.text_input("Nome do Jogador:", placeholder="Ex: LeBron James...")
     with col_p2:
-        opp_team = st.text_input("Contra (Sigla):", placeholder="Ex: GSW, BOS...")
+        opp_team = st.text_input("Contra (Sigla):", placeholder="Ex: GSW...")
+    with col_p3:
+        stat_type = st.selectbox("Estatística:", ["PTS", "REB", "AST", "PRA", "3PM"])
 
     if p_name and opp_team and st.button("🔮 Calcular Projeção", type="primary"):
-        with st.spinner(f"Analisando dados de {p_name}..."):
-            proj = st.session_state.props_engine.get_projection(p_name, opp_team.upper())
+        with st.spinner(f"Analisando {stat_type} de {p_name}..."):
+            proj = st.session_state.props_engine.get_projection(p_name, opp_team.upper(), stat_type)
             
         if proj:
+            # Determine Color based on Trend
+            trend_color = "#4ade80" if proj['last_5_avg'] > proj['season_avg'] else "#facc15"
+            
             html_card = textwrap.dedent(f"""
             <div class="game-card" style="padding: 20px; text-align: center;">
                 <div style="font-size: 1.5rem; font-weight: 800; color: #fff; margin-bottom: 10px;">
@@ -180,7 +160,7 @@ with tab_props:
                     </div>
                     <div style="width: 1px; height: 40px; background: #334155;"></div>
                     <div style="text-align: left;">
-                        <div style="font-size: 0.8rem; color: #38bdf8;">ÚLT. 5 JOGOS</div>
+                        <div style="font-size: 0.8rem; color: {trend_color};">ÚLT. 5 JOGOS</div>
                         <div style="font-size: 1.2rem; font-weight: 700; color: #fff;">{proj['last_5_avg']}</div>
                     </div>
                 </div>
@@ -188,7 +168,7 @@ with tab_props:
                 <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">
                     <div style="font-size: 0.9rem; color: #cbd5e1; letter-spacing: 0.1em; font-weight: 700;">PROJEÇÃO FINAL</div>
                     <div style="font-size: 3rem; font-weight: 900; color: #4ade80; text-shadow: 0 0 20px rgba(74, 222, 128, 0.3);">
-                        {proj['projection']} <span style="font-size: 1rem; color: #fff;">PTS</span>
+                        {proj['projection']} <span style="font-size: 1rem; color: #fff;">{proj['stat_type']}</span>
                     </div>
                     <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">
                         Ajuste Matchup: <span style="color: {'#ef4444' if proj['matchup_adj'] < 0 else '#4ade80'}">{proj['matchup_adj']:+.1f}</span>
@@ -198,10 +178,31 @@ with tab_props:
             """)
             st.markdown(html_card, unsafe_allow_html=True)
             
-            if st.button(f"📥 Registrar Over {proj['projection']}", key="btn_prop"):
-                save_bet(f"{proj['player']} (Props)", "Over Pts", f"Over {proj['projection']}", 1.90, st.session_state.banca * 0.01)
+            # Action Buttons
+            c_bet, c_info = st.columns([1, 1])
+            with c_bet:
+                if st.button(f"📥 Apostar Over {proj['projection']}", key="btn_prop_ov"):
+                    save_bet(f"{proj['player']} ({proj['stat_type']})", "Player Prop", f"Over {proj['projection']}", 1.90, st.session_state.banca * 0.01)
+            
+            # Recent Games Log
+            with st.expander("📜 Últimos 5 Jogos", expanded=True):
+                # Simple HTML Table for logs
+                rows = ""
+                for g in proj['last_5_logs']:
+                    rows += f"<tr><td style='padding:5px;border-bottom:1px solid #334155'>{g['date']}</td><td style='padding:5px;border-bottom:1px solid #334155'>{g['matchup']}</td><td style='padding:5px;border-bottom:1px solid #334155;color:white;font-weight:bold'>{g['value']}</td></tr>"
+                
+                table_html = f"""
+                <table style='width:100%; font-size:0.9rem; color:#cbd5e1; border-collapse:collapse;'>
+                    <thead>
+                        <tr style='text-align:left; color:#94a3b8;'><th>DATA</th><th>JOGO</th><th>{proj['stat_type']}</th></tr>
+                    </thead>
+                    <tbody>{rows}</tbody>
+                </table>
+                """
+                st.markdown(table_html, unsafe_allow_html=True)
+
         else:
-            st.error("Jogador não encontrado ou dados insuficientes.")
+            st.error("Jogador não encontrado ou dados insuficiente (Verifique a ortografia).")
 
 with tab_ops:
     c_scan, c_news = st.columns([1.5, 4])
@@ -216,8 +217,8 @@ with tab_ops:
     
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
     
-    STATS = get_advanced_team_stats()
-    ODDS = get_odds(API_KEY)
+    STATS = get_team_stats()
+    ODDS = get_odds()
     LIVE = get_live_scores()
     
     if not ODDS or isinstance(ODDS, dict):
@@ -326,7 +327,6 @@ with tab_ops:
                         pick = h if fair < m_spr else a
                         line = m_spr if pick == h else -m_spr
                         units = 1.5 if diff > 3 else 0.75
-                        units = 1.5 if diff > 3 else 0.75
                         bet_value = val_unid * units
                         
                         html_footer = textwrap.dedent(f"""
@@ -348,7 +348,16 @@ with tab_ops:
                     st.markdown("</div>", unsafe_allow_html=True)
 
 with tab_adm:
-    st.subheader("📈 Performance da Carteira")
+    c_title, c_status = st.columns([3, 1])
+    with c_title:
+        st.subheader("📈 Performance da Carteira")
+    with c_status:
+        try:
+            # Teste rápido se df carrega sem erro
+            _ = load_history()
+            st.markdown("<div style='text-align:right; color:#4ade80; font-weight:bold; font-size:0.8rem; margin-top:20px'>🟢 Online (Google Sheets)</div>", unsafe_allow_html=True)
+        except:
+             st.markdown("<div style='text-align:right; color:#ef4444; font-weight:bold; font-size:0.8rem; margin-top:20px'>🔴 Offline</div>", unsafe_allow_html=True)
     df = load_history()
     if not df.empty:
         edited = st.data_editor(
@@ -358,9 +367,22 @@ with tab_adm:
         )
         if st.button("💾 Salvar Alterações"):
             for i, r in edited.iterrows():
-                if r['Resultado'] == 'Green': edited.at[i, 'Lucro'] = r['Valor'] * 0.91
-                elif r['Resultado'] == 'Red': edited.at[i, 'Lucro'] = -r['Valor']
-            edited.to_csv(HISTORY_FILE, index=False); st.rerun()
+                lucro = r['Lucro']
+                # Cálculo de lucro automático
+                if r['Resultado'] == 'Green': 
+                    lucro = r['Valor'] * (r['Odd'] - 1)
+                elif r['Resultado'] == 'Red': 
+                    lucro = -r['Valor']
+                elif r['Resultado'] == 'Pendente':
+                    lucro = 0.0
+                
+                # Atualiza no Banco de Dados
+                # O ID é necessário para update. load_history traz coluna 'ID'.
+                if 'ID' in r:
+                    update_bet_result(r['ID'], r['Resultado'], lucro)
+            
+            st.success("Alterações salvas no banco de dados!")
+            st.rerun()
             
         finalizadas = edited[edited['Resultado']!='Pendente']
         if not finalizadas.empty:

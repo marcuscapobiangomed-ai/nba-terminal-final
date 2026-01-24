@@ -43,6 +43,7 @@ def get_team_stats(season: Optional[str] = None) -> Dict[str, Dict]:
             net_rtg = row.get('NET_RATING', 0.0)
             
             data[row['TEAM_NAME']] = {
+                'abbr': row['TEAM_ABBREVIATION'],
                 'pace': row['PACE'],
                 'off_rtg': row.get('OFF_RATING', 110.0),
                 'def_rtg': row.get('DEF_RATING', 110.0),

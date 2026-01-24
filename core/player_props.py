@@ -1,6 +1,7 @@
 import pandas as pd
 from nba_api.stats.static import players
-from nba_api.stats.endpoints import playergamelog, leaguedashteamstats
+from nba_api.stats.endpoints import playergamelog
+from core.data_fetcher import get_team_stats
 
 class PlayerPropsEngine:
     def __init__(self):
@@ -10,11 +11,13 @@ class PlayerPropsEngine:
     def _load_team_defense(self):
         """Carrega DefRtg de todos os times para ajuste de matchup."""
         try:
-            stats = leaguedashteamstats.LeagueDashTeamStats(
-                season='2024-25', measure_type_detailed_defense='Base'
-            ).get_data_frames()[0]
+            stats = get_team_stats()
             # Cria dicionario {TEAM_ABBREVIATION: DEFRTG}
-            return dict(zip(stats['TEAM_ABBREVIATION'], stats['DEF_RATING']))
+            defense_map = {}
+            for _, data in stats.items():
+                if 'abbr' in data:
+                    defense_map[data['abbr']] = data['def_rtg']
+            return defense_map
         except:
             return {}
 
@@ -26,15 +29,25 @@ class PlayerPropsEngine:
         except:
             return None
 
-    def get_projection(self, player_name, opponent_abbr):
+    def get_projection(self, player_name, opponent_abbr, stat_type='PTS'):
         """
-        Gera projecao de Pontos baseada em:
-        - 40% Media da Temporada
-        - 40% Ultimos 5 Jogos
-        - 20% Fator Matchup (Defesa do Oponente)
+        Gera projecao baseada em:
+        - 50% Media da Temporada
+        - 50% Ultimos 5 Jogos
+        - Ajuste Matchup (Defesa do Oponente)
         """
         p_id = self.get_player_id(player_name)
         if not p_id: return None
+
+        # Map display name to Dataframe Column
+        stat_map = {
+            'PTS': 'PTS',
+            'REB': 'REB',
+            'AST': 'AST',
+            '3PM': 'FG3M',
+            'PRA': 'PRA' # Special case handled below
+        }
+        col = stat_map.get(stat_type, 'PTS')
 
         try:
             # Busca Logs
@@ -47,28 +60,52 @@ class PlayerPropsEngine:
             
             if df.empty: return None
 
+            # Calculate PRA if needed
+            if stat_type == 'PRA':
+                df['PRA'] = df['PTS'] + df['REB'] + df['AST']
+
             # 1. Base Stats
-            season_avg = df['PTS'].mean()
-            last_5_avg = df.head(5)['PTS'].mean()
+            season_avg = df[col].mean()
+            last_5_avg = df.head(5)[col].mean()
 
             # 2. Matchup Adjustment
-            # Se a defesa do oponente for ruim (> 115), ganha bonus. Se boa (< 110), perde.
+            # General proxy: High DefRtg (bad defense) -> Bonus
+            # Low DefRtg (good defense) -> Malus
             opp_def = self.team_defense.get(opponent_abbr, 112.0)
-            matchup_factor = (opp_def - 112.0) * 0.1 # Ex: Def 120 (+8) -> +0.8 pts
-
-            # 3. Formula Final
-            # Weighted: 0.45 Season + 0.45 Last5 + 0.1 Matchup
-            # Simplificado: Media Ponderada + Ajuste Matchup
+            
+            # Scale factor based on stat magnitude
+            # For 25 pts, 10% diff is 2.5. For 5 rebs, 10% is 0.5.
+            # Using percentage-based adjustment is safer.
+            
+            base_def = 112.0 # League average approx
+            diff_factor = (opp_def - base_def) / 100.0 # Ex: (120 - 112) / 100 = 0.08 (+8%)
+            
+            # Apply to projection
+            # Weighted: 0.5 Season + 0.5 Last5
             weighted_avg = (season_avg * 0.5) + (last_5_avg * 0.5)
-            projection = weighted_avg + matchup_factor
+            
+            matchup_adj = weighted_avg * diff_factor
+            projection = weighted_avg + matchup_adj
+
+            # Prepare Last 5 logs for display
+            last_5_df = df.head(5).copy()
+            last_5_logs = []
+            for _, row in last_5_df.iterrows():
+                last_5_logs.append({
+                    'date': row['GAME_DATE'],
+                    'matchup': row['MATCHUP'],
+                    'value': row[col]
+                })
 
             return {
                 "player": player_name,
+                "stat_type": stat_type,
                 "projection": round(projection, 1),
                 "season_avg": round(season_avg, 1),
                 "last_5_avg": round(last_5_avg, 1),
-                "matchup_adj": round(matchup_factor, 1),
-                "opponent": opponent_abbr
+                "matchup_adj": round(matchup_adj, 1),
+                "opponent": opponent_abbr,
+                "last_5_logs": last_5_logs
             }
 
         except Exception as e:

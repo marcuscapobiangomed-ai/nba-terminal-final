@@ -49,8 +49,13 @@ def load_history():
             st.warning("⚠️ **Configuração:** Adicione as credenciais do Google Sheets no Streamlit Secrets.")
             return pd.DataFrame(columns=EXPECTED_COLUMNS)
         
-        # Garante que os headers existem e lê os dados
-        df = _ensure_headers(conn)
+        # Tenta carregar dados. Se falhar, tenta garantir headers.
+        try:
+            df = conn.read(worksheet=SHEET_NAME, ttl=0)
+        except Exception as e:
+            print(f"[sheets_db] read falhou para {SHEET_NAME}: {e}. Tentando detectar aba...")
+            # Fallback: Se Sheet1 não existir, tenta encontrar a primeira aba
+            df = _ensure_headers(conn)
         
         # Se planilha estiver vazia, retorna DF vazio com colunas certas
         if df is None or df.empty or len(df.columns) == 0:
@@ -62,9 +67,10 @@ def load_history():
             
         return df
     except Exception as e:
-        err_msg = str(e)
-        print(f"[sheets_db] load_history erro: {err_msg}")
-        st.error(f"⚠️ Erro de Conexão com Google Sheets: {SHEET_NAME}")
+        import traceback
+        err_trace = traceback.format_exc()
+        print(f"[sheets_db] load_history CRITICAL: {err_trace}")
+        st.error(f"⚠️ Erro de Leitura: {e}")
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
 
@@ -103,20 +109,35 @@ def save_bet(jogo, tipo, aposta, odd, valor):
             "Lucro": 0.0
         }])
         
-        # Adiciona ao DF existente (ignore_index evita warning)
+        # Adiciona ao DF existente
         if df.empty:
             updated_df = new_row
         else:
             updated_df = pd.concat([df, new_row], ignore_index=True)
         
         # Salva de volta na planilha
-        conn.update(worksheet=SHEET_NAME, data=updated_df)
-        print(f"[sheets_db] Aposta salva: ID={new_id}")
-        
-        return True
+        try:
+            conn.update(worksheet=SHEET_NAME, data=updated_df)
+            print(f"[sheets_db] Aposta salva com sucesso: ID={new_id}")
+            return True
+        except Exception as e:
+            import traceback
+            err_trace = traceback.format_exc()
+            print(f"[sheets_db] update falhou: {err_trace}")
+            
+            # Tenta um último recurso: salvar sem especificar worksheet (usa a primeira)
+            try:
+                print("[sheets_db] Tentando salvar sem especificar nome da aba...")
+                conn.update(data=updated_df)
+                return True
+            except:
+                st.error(f"Erro técnico ao gravar: {e}")
+                st.info("💡 Dica: Verifique se a planilha tem uma aba chamada 'Sheet1' ou se o Service Account tem permissão de EDITOR.")
+                return False
+                
     except Exception as e:
-        print(f"[sheets_db] save_bet erro: {e}")
-        st.error(f"Erro ao salvar no Google Sheets: {e}")
+        print(f"[sheets_db] save_bet erro geral: {e}")
+        st.error(f"Erro ao registrar aposta: {e}")
         return False
 
 
@@ -124,12 +145,10 @@ def update_bet_result(bet_id, resultado, lucro):
     """Atualiza resultado de uma aposta"""
     try:
         df = load_history()
-        
         if df.empty: return
         
         # Localiza linha pelo ID
         mask = df["ID"] == bet_id
-        
         if not mask.any(): return
         
         # Atualiza valores
@@ -138,7 +157,11 @@ def update_bet_result(bet_id, resultado, lucro):
         
         # Salva tudo de volta
         conn = _get_connection()
-        conn.update(worksheet=SHEET_NAME, data=df)
-        
+        try:
+            conn.update(worksheet=SHEET_NAME, data=df)
+        except:
+            conn.update(data=df) # Fallback para primeira aba
+            
     except Exception as e:
-        st.error(f"Erro ao atualizar Google Sheets: {e}")
+        print(f"[sheets_db] update_bet_result erro: {e}")
+        st.error(f"Erro ao atualizar resultado: {e}")

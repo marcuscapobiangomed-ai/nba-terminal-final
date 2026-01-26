@@ -4,9 +4,12 @@ import pandas as pd
 from datetime import datetime
 import pytz
 
-# Nome da planilha (deve combinar com o que está no secrets ou ser o nome do arquivo)
-# Se usar URL no secrets, esse nome pode ser ignorado ou usado como worksheet name
-SHEET_NAME = "NBA_Bets_Database"
+# Usa "Sheet1" que é a aba padrão que já existe na planilha
+# Isso evita erro de worksheet não encontrada
+SHEET_NAME = "Sheet1"
+
+# Colunas esperadas no histórico de apostas
+EXPECTED_COLUMNS = ["ID", "Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"]
 
 def _get_connection():
     """Retorna conexão com Google Sheets com validação"""
@@ -15,8 +18,28 @@ def _get_connection():
         if "connections" not in st.secrets or "gsheets" not in st.secrets["connections"]:
             return None
         return st.connection("gsheets", type=GSheetsConnection)
-    except Exception:
+    except Exception as e:
+        print(f"[sheets_db] Erro ao conectar: {e}")
         return None
+
+def _ensure_headers(conn):
+    """Garante que a planilha tenha os headers corretos"""
+    try:
+        df = conn.read(worksheet=SHEET_NAME, ttl=0)
+        # Se planilha vazia ou sem colunas corretas, cria headers
+        if df is None or df.empty or list(df.columns) != EXPECTED_COLUMNS:
+            empty_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
+            conn.update(worksheet=SHEET_NAME, data=empty_df)
+            return empty_df
+        return df
+    except Exception:
+        # Tenta criar planilha com headers
+        empty_df = pd.DataFrame(columns=EXPECTED_COLUMNS)
+        try:
+            conn.update(worksheet=SHEET_NAME, data=empty_df)
+        except:
+            pass
+        return empty_df
 
 def load_history():
     """Carrega histórico de apostas da planilha"""
@@ -24,17 +47,14 @@ def load_history():
         conn = _get_connection()
         if conn is None:
             st.warning("⚠️ **Configuração:** Adicione as credenciais do Google Sheets no Streamlit Secrets.")
-            return pd.DataFrame(columns=["ID", "Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
-            
-        # Lê a planilha. ttl=0 garante que não cacheie (sempre pega dados novos)
-        df = conn.read(worksheet=SHEET_NAME, ttl=0)
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
         
-        # Garante que as colunas existem
-        expected_cols = ["ID", "Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"]
+        # Garante que os headers existem e lê os dados
+        df = _ensure_headers(conn)
         
-        # Se planilha estiver vazia ou nova, retorna DF vazio com colunas certas
-        if df.empty or len(df.columns) == 0:
-            return pd.DataFrame(columns=expected_cols)
+        # Se planilha estiver vazia, retorna DF vazio com colunas certas
+        if df is None or df.empty or len(df.columns) == 0:
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
             
         # Garante int para ID
         if "ID" in df.columns:
@@ -42,17 +62,11 @@ def load_history():
             
         return df
     except Exception as e:
-        # Se der erro (ex: planilha não existe ainda), retorna vazio mas avisa se for grave
         err_msg = str(e)
-        if "worksheet" in err_msg.lower() or "not found" in err_msg.lower():
-             print(f"Aviso: Planilha não encontrada ou nova ({err_msg})")
-        else:
-             st.error(f"⚠️ Erro de Conexão com Google Sheets: {err_msg}")
-        
-        return pd.DataFrame(columns=["ID", "Data", "Jogo", "Tipo", "Aposta", "Odd", "Valor", "Resultado", "Lucro"])
+        print(f"[sheets_db] load_history erro: {err_msg}")
+        st.error(f"⚠️ Erro de Conexão com Google Sheets: {SHEET_NAME}")
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-
-# ... existing imports ...
 
 def save_bet(jogo, tipo, aposta, odd, valor):
     """Salva nova aposta adicionando linha na planilha"""
@@ -89,17 +103,22 @@ def save_bet(jogo, tipo, aposta, odd, valor):
             "Lucro": 0.0
         }])
         
-        # Adiciona ao DF existente
-        updated_df = pd.concat([df, new_row], ignore_index=True)
+        # Adiciona ao DF existente (ignore_index evita warning)
+        if df.empty:
+            updated_df = new_row
+        else:
+            updated_df = pd.concat([df, new_row], ignore_index=True)
         
         # Salva de volta na planilha
-        conn = _get_connection()
         conn.update(worksheet=SHEET_NAME, data=updated_df)
+        print(f"[sheets_db] Aposta salva: ID={new_id}")
         
         return True
     except Exception as e:
+        print(f"[sheets_db] save_bet erro: {e}")
         st.error(f"Erro ao salvar no Google Sheets: {e}")
         return False
+
 
 def update_bet_result(bet_id, resultado, lucro):
     """Atualiza resultado de uma aposta"""

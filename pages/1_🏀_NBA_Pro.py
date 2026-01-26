@@ -35,9 +35,11 @@ from core.sheets_db import save_bet as db_save_bet, load_history as db_load_hist
 # --- 1. CONFIGURAÇÃO & ESTADO ---
 st.set_page_config(page_title="NBA Terminal Pro", page_icon="🏀", layout="wide")
 
-# Carrega variáveis de ambiente
-load_dotenv()
-API_KEY = os.getenv("ODDS_API_KEY")
+# Carrega API Key - prioriza st.secrets (Streamlit Cloud), fallback para .env (local)
+try:
+    API_KEY = st.secrets.get("ODDS_API_KEY", os.getenv("ODDS_API_KEY"))
+except:
+    API_KEY = os.getenv("ODDS_API_KEY")
 
 # Banco de dados agora é Google Sheets (não precisa de init local)
 
